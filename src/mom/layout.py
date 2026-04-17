@@ -47,3 +47,14 @@ def usable_weeks(year: int, today: date) -> list[int]:
             break
         result.append(week_idx)
     return result
+
+
+def required_cols(text: str) -> int:
+    """Pixel-columns needed to render text in the 3x5 font with 1-col spacing."""
+    if not text:
+        raise ValueError("text must be non-empty")
+    return 4 * len(text) - 1
+
+
+def check_fit(required: int, available: int, year: int) -> Fit:
+    return Fit(ok=required <= available, required=required, available=available, year=year)

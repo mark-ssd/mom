@@ -63,3 +63,42 @@ def test_fit_dataclass_fields():
     f = Fit(ok=False, required=43, available=14, year=2026)
     assert f.ok is False
     assert f.required == 43
+
+
+from mom.layout import required_cols, check_fit
+
+
+def test_required_cols_one_char():
+    assert required_cols("A") == 3     # 1*3 + 0 = 3
+
+
+def test_required_cols_two_chars():
+    assert required_cols("HI") == 7    # 2*3 + 1 = 7
+
+
+def test_required_cols_empty_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        required_cols("")
+
+
+def test_required_cols_hello_world():
+    assert required_cols("HELLO WORLD") == 43   # 11*3 + 10 = 43
+
+
+def test_check_fit_exact_fit():
+    # required 14, available 14 -> ok
+    f = check_fit(14, 14, year=2024)
+    assert f.ok is True
+
+
+def test_check_fit_overflow_by_one():
+    f = check_fit(15, 14, year=2026)
+    assert f.ok is False
+    assert f.required == 15
+    assert f.available == 14
+
+
+def test_check_fit_under():
+    f = check_fit(3, 52, year=2024)
+    assert f.ok is True
