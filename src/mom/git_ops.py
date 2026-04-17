@@ -76,6 +76,13 @@ def update_state(state: dict, canvas: Canvas | None,
     drawings = state.setdefault("drawings", {})
     if action == "upsert":
         assert canvas is not None
+        if canvas.window.mode == "trailing":
+            # Only one trailing drawing at a time. Purge any existing trailing
+            # entries (including legacy per-date keys like `trailing-2026-04-16`).
+            for k in list(drawings):
+                entry = drawings[k]
+                if entry.get("mode") == "trailing" or k.startswith("trailing"):
+                    del drawings[k]
         drawings[canvas.window.state_key] = {
             "mode": canvas.window.mode,
             "ref": canvas.window.ref,

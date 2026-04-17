@@ -98,10 +98,10 @@ Parse JSON:
 - Other `status == "error"`: surface `error.message` + `error.code`. STOP.
 
 ## Removal
-If the user asks to remove a drawing, suggest: `mom clean <state-key>` where
-`<state-key>` is the identifier shown in previous runs (e.g., `trailing-2026-04-16`
-or `calendar-2024`). Run it only after explicit confirmation.
-Mirror the same auth/error handling as above.
+If the user asks to remove a drawing, suggest `mom clean <state-key>`:
+- `trailing` — the current trailing 12-month drawing
+- `calendar-YYYY` — the drawing on a specific year tab
+Run it only after explicit confirmation. Mirror the same auth/error handling.
 
 ## Safety
 - Always pass TEXT as a single argv element. Never interpolate user input into

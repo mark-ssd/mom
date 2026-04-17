@@ -61,11 +61,16 @@ def test_trailing_window_has_52_cols():
     assert len(w.usable_indices) == 52
 
 
-def test_trailing_window_state_key_format():
+def test_trailing_window_state_key_is_fixed():
+    # Fixed "trailing" key so re-runs on different days replace, not stack.
     w = trailing_window(date(2026, 4, 16))
-    assert w.state_key == "trailing-2026-04-16"
+    assert w.state_key == "trailing"
     assert w.ref == "2026-04-16"
     assert w.mode == "trailing"
+
+    w2 = trailing_window(date(2026, 4, 17))
+    assert w2.state_key == "trailing"
+    assert w2.ref == "2026-04-17"
 
 
 def test_trailing_window_ends_at_most_recent_completed_saturday():
@@ -140,7 +145,7 @@ def test_plan_trailing_returns_canvas_and_fits_ssd_tech():
     result = plan("SSD TECH", w, intensity=4)
     assert isinstance(result, Canvas)
     # 8 chars: 4*8-1 = 31 cols. 52 available in trailing window.
-    assert result.window.state_key == "trailing-2026-04-16"
+    assert result.window.state_key == "trailing"
 
 
 def test_plan_cell_count_matches_glyph_pixels():
@@ -248,7 +253,7 @@ def test_window_from_state_calendar():
 
 def test_window_from_state_trailing():
     w = window_from_state("trailing", "2026-04-16", date(2026, 5, 1))
-    assert w.state_key == "trailing-2026-04-16"
+    assert w.state_key == "trailing"
     assert len(w.usable_indices) == 52
 
 

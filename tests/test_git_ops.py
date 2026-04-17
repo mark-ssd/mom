@@ -110,14 +110,42 @@ def test_rebuild_trailing_window_creates_cross_year_commits(tmp_path, bare_origi
         author_name="Test User",
         author_email="12345+test@users.noreply.github.com",
     )
-    # Verify state file contains mode=trailing and ref=today
+    # Verify state file contains mode=trailing and ref=today under the fixed key.
     import json
     state = json.loads((work / ".mom-state.json").read_text())
-    assert "trailing-2026-04-16" in state["drawings"]
-    d = state["drawings"]["trailing-2026-04-16"]
+    assert "trailing" in state["drawings"]
+    d = state["drawings"]["trailing"]
     assert d["mode"] == "trailing"
     assert d["ref"] == "2026-04-16"
     assert d["text"] == "SSD TECH"
+
+
+def test_update_state_trailing_replaces_stale_entries():
+    """A new trailing upsert should purge any legacy per-date trailing keys."""
+    from mom.git_ops import update_state
+    today = date(2026, 4, 17)
+    w = trailing_window(today)
+    canvas = plan("HI", w, intensity=1)
+    state = {
+        "managed_by": "mom", "version": 1,
+        "drawings": {
+            "trailing-2026-04-16": {"mode": "trailing", "ref": "2026-04-16",
+                                    "text": "OLD", "intensity": 4,
+                                    "updated_at": "2026-04-16T00:00:00Z"},
+            "trailing-2026-04-15": {"mode": "trailing", "ref": "2026-04-15",
+                                    "text": "OLDER", "intensity": 4,
+                                    "updated_at": "2026-04-15T00:00:00Z"},
+            "calendar-2024": {"mode": "calendar", "ref": "2024",
+                              "text": "KEEP", "intensity": 4,
+                              "updated_at": "2024-01-01T00:00:00Z"},
+        },
+    }
+    out = update_state(state, canvas, "upsert", canvas.window.state_key)
+    # All trailing-* entries and the legacy keys should be gone; only one
+    # "trailing" entry remains. Calendar entry untouched.
+    assert set(out["drawings"].keys()) == {"trailing", "calendar-2024"}
+    assert out["drawings"]["trailing"]["text"] == "HI"
+    assert out["drawings"]["calendar-2024"]["text"] == "KEEP"
 
 
 def test_rebuild_refuses_repo_missing_state(tmp_path, bare_origin, author_env):

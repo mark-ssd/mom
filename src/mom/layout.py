@@ -121,7 +121,11 @@ def trailing_window(ref_date: date) -> Window:
         usable_indices=tuple(range(52)),
         # GitHub's default view shows 53 cols: 52 complete weeks + current week.
         display_cols=53,
-        state_key=f"trailing-{ref_date.isoformat()}",
+        # Single fixed state key -- only one trailing drawing can exist at a
+        # time; re-runs on different days replace each other rather than
+        # stacking (different ref_dates on consecutive days would otherwise
+        # produce overlapping cells).
+        state_key="trailing",
         human_desc=f"trailing window ending {ref_date.isoformat()}",
         mode="trailing",
         ref=ref_date.isoformat(),

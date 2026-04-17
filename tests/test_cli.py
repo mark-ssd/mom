@@ -54,7 +54,7 @@ def test_draw_default_uses_trailing_window(tmp_xdg, monkeypatch):
     data = json.loads(result.output)
     assert data["status"] == "preview"
     assert data["fit"]["ok"] is True
-    assert data["fit"]["window"].startswith("trailing-")
+    assert data["fit"]["window"] == "trailing"
     assert data["fit"]["available_cols"] == 52
 
 
