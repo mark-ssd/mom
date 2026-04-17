@@ -138,14 +138,16 @@ def draw(
             cfg.github_user = user
             save(cfg)
         git_email = _git_user_email()
-        if git_email:
-            verify_email(tok, git_email)
+        email_warning = verify_email(tok, git_email) if git_email else None
         clone_url, html_url = ensure_repo(tok, user, cfg.repo)
         auth_clone = clone_url.replace("https://", f"https://x-access-token:{tok}@")
     except AuthError as e:
         _emit_error(fmt, 4, e.kind, str(e))
     except NetworkError as e:
         _emit_error(fmt, 5, "network", str(e))
+
+    if email_warning and fmt is Format.text:
+        typer.echo(f"warning: {email_warning}", err=True)
 
     if not yes and fmt is Format.text:
         typer.echo(preview_ascii)

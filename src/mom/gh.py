@@ -43,14 +43,25 @@ def verify_token(token: str) -> str:
     return r.json()["login"]
 
 
-def verify_email(token: str, git_email: str) -> None:
+def verify_email(token: str, git_email: str) -> str | None:
     """Verify that git_email is one of the user's verified GitHub emails.
-    Raises AuthError(kind="email_mismatch") if not.
+
+    Returns None on match or when the check can't run (token lacks `user:email`
+    scope -- /user/emails returns 403/404 in that case). Returns a warning
+    string when the check was skipped so the caller can surface it.
+    Raises AuthError(kind="email_mismatch") on a definitive mismatch.
     """
     try:
         r = requests.get(f"{_API}/user/emails", headers=_headers(token), timeout=10)
     except requests.RequestException as e:
         raise NetworkError(str(e)) from e
+
+    if r.status_code in (403, 404):
+        return (
+            f"skipped email verification: token lacks `user:email` scope "
+            f"(add it at github.com/settings/tokens if you want commits to be "
+            f"verified against your GitHub-verified emails)"
+        )
     if r.status_code >= 500:
         raise NetworkError(f"GitHub API {r.status_code}: {r.text[:200]}")
     r.raise_for_status()
@@ -62,6 +73,7 @@ def verify_email(token: str, git_email: str) -> None:
             f"git config user.email '{git_email}' isn't on your verified GitHub emails -- "
             f"commits won't count. Fix with `git config user.email <verified>` and retry.",
         )
+    return None
 
 
 def ensure_repo(token: str, owner: str, name: str) -> tuple[str, str]:

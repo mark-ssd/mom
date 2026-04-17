@@ -45,8 +45,7 @@ def test_verify_email_match():
         json=[{"email": "a@b.com", "verified": True, "primary": True}],
         status=200,
     )
-    # No exception -> pass.
-    verify_email("ghp_xyz", "a@b.com")
+    assert verify_email("ghp_xyz", "a@b.com") is None
 
 
 @responses.activate
@@ -59,6 +58,21 @@ def test_verify_email_mismatch_raises():
     with pytest.raises(AuthError) as excinfo:
         verify_email("ghp_xyz", "other@x.com")
     assert excinfo.value.kind == "email_mismatch"
+
+
+@responses.activate
+def test_verify_email_skips_on_403_and_returns_warning():
+    responses.add(responses.GET, f"{API}/user/emails", json={}, status=403)
+    warning = verify_email("ghp_xyz", "a@b.com")
+    assert warning is not None
+    assert "skipped" in warning.lower()
+
+
+@responses.activate
+def test_verify_email_skips_on_404_and_returns_warning():
+    responses.add(responses.GET, f"{API}/user/emails", json={}, status=404)
+    warning = verify_email("ghp_xyz", "a@b.com")
+    assert warning is not None
 
 
 @responses.activate
