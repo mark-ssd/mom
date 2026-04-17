@@ -1,0 +1,70 @@
+"""Config file + auth resolution."""
+
+from __future__ import annotations
+import json
+import os
+import subprocess
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from mom.errors import AuthError
+
+
+@dataclass
+class Config:
+    repo: str = "mom-canvas"
+    github_user: str = ""
+    token: str | None = None
+
+
+def _config_path() -> Path:
+    xdg = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+    return Path(xdg) / "mom" / "config.json"
+
+
+def load() -> Config:
+    p = _config_path()
+    if not p.exists():
+        return Config()
+    data = json.loads(p.read_text())
+    return Config(
+        repo=data.get("repo", "mom-canvas"),
+        github_user=data.get("github_user", ""),
+        token=data.get("token"),
+    )
+
+
+def save(cfg: Config) -> None:
+    p = _config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(asdict(cfg), indent=2))
+    os.chmod(p, 0o600)
+
+
+def resolve_token(explicit: str | None) -> str:
+    """Resolve a GitHub token in this precedence:
+    explicit flag -> GITHUB_TOKEN env -> config file -> gh CLI.
+    Raises AuthError(kind="auth_missing") if none available.
+    """
+    if explicit:
+        return explicit
+    env_tok = os.environ.get("GITHUB_TOKEN")
+    if env_tok:
+        return env_tok
+    cfg = load()
+    if cfg.token:
+        return cfg.token
+    try:
+        res = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=False
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except FileNotFoundError:
+        pass
+    raise AuthError(
+        kind="auth_missing",
+        message=(
+            "No GitHub token found. Set GITHUB_TOKEN, pass --token, or run "
+            "'mom config set-token'."
+        ),
+    )
