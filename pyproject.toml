@@ -33,5 +33,5 @@ packages = ["src/mom"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -q"
+addopts = "-ra -q -m 'not live'"
 markers = ["live: tests that hit real GitHub (opt-in, not run in CI)"]
