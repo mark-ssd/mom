@@ -102,3 +102,73 @@ def test_check_fit_overflow_by_one():
 def test_check_fit_under():
     f = check_fit(3, 52, year=2024)
     assert f.ok is True
+
+
+from datetime import date as _d
+from mom.layout import plan
+from mom.errors import UnsupportedCharError
+
+
+def test_plan_returns_canvas_for_valid_input():
+    today = _d(2026, 4, 16)
+    result = plan("HI", year=2024, today=today, intensity=4)
+    assert isinstance(result, Canvas)
+    assert result.text == "HI"
+    assert result.year == 2024
+    assert result.intensity == 4
+
+
+def test_plan_cell_count_matches_glyph_pixels():
+    # "HI" in 3x5: H has 11 on-pixels (2+2+3+2+2), I has 9 (3+1+1+1+3) -> 20 cells.
+    today = _d(2026, 4, 16)
+    c = plan("HI", year=2024, today=today, intensity=4)
+    assert len(c.cells) == 20
+
+
+def test_plan_commit_count_scales_with_intensity():
+    today = _d(2026, 4, 16)
+    c4 = plan("A", year=2024, today=today, intensity=4)
+    c1 = plan("A", year=2024, today=today, intensity=1)
+    total4 = sum(n for _, n in c4.cells)
+    total1 = sum(n for _, n in c1.cells)
+    assert total4 == 4 * total1   # 20 vs 5
+
+
+def test_plan_centers_horizontally():
+    # "A" in 2024 (52 cols). required=3. pad=(52-3)//2 = 24. start_col=usable[24]=24.
+    today = _d(2026, 4, 16)
+    c = plan("A", year=2024, today=today, intensity=4)
+    min_col = min((cell_date - c.grid_start).days // 7 for cell_date, _ in c.cells)
+    max_col = max((cell_date - c.grid_start).days // 7 for cell_date, _ in c.cells)
+    assert min_col == 24
+    assert max_col == 26   # 3 cols wide
+
+
+def test_plan_rejects_when_too_wide_returns_fit():
+    today = _d(2026, 4, 16)
+    result = plan("HELLO WORLD", year=2026, today=today, intensity=4)
+    assert isinstance(result, Fit)
+    assert result.ok is False
+
+
+def test_plan_future_year_returns_fit_fail():
+    today = _d(2026, 4, 16)
+    result = plan("HI", year=2027, today=today, intensity=4)
+    assert isinstance(result, Fit)
+    assert result.ok is False
+
+
+def test_plan_unsupported_char_raises():
+    import pytest
+    today = _d(2026, 4, 16)
+    with pytest.raises(UnsupportedCharError):
+        plan("HI\u2764", year=2024, today=today, intensity=4)
+
+
+def test_plan_cells_use_rows_1_to_5():
+    # Font occupies Mon-Fri (weekday 0-4 -> sun-offset 1-5).
+    today = _d(2026, 4, 16)
+    c = plan("A", year=2024, today=today, intensity=4)
+    for cell_date, _ in c.cells:
+        offset = (cell_date - c.grid_start).days % 7
+        assert 1 <= offset <= 5

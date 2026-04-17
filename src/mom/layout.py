@@ -58,3 +58,57 @@ def required_cols(text: str) -> int:
 
 def check_fit(required: int, available: int, year: int) -> Fit:
     return Fit(ok=required <= available, required=required, available=available, year=year)
+
+
+from mom.font import get_glyph
+
+_INTENSITY_COMMITS: dict[int, int] = {1: 5, 2: 10, 3: 15, 4: 20}
+
+
+def plan(text: str, year: int, today: date, intensity: int) -> "Canvas | Fit":
+    """Build a Canvas for text on year's grid, or a Fit(ok=False) on failure.
+
+    Raises UnsupportedCharError if any char has no glyph.
+    Returns Fit(ok=False, ...) if text doesn't fit or year has no drawable weeks.
+    """
+    if intensity not in _INTENSITY_COMMITS:
+        raise ValueError(f"intensity must be 1..4, got {intensity}")
+
+    weeks = usable_weeks(year, today)
+    req = required_cols(text)
+    fit = check_fit(req, len(weeks), year)
+    if not fit.ok:
+        return fit
+
+    # Resolve glyphs up-front so UnsupportedCharError fires before layout work.
+    glyphs = [get_glyph(ch) for ch in text]
+
+    grid_start = _sunday_on_or_before(date(year, 1, 1))
+    pad = (len(weeks) - req) // 2
+    start_col = weeks[pad]
+
+    cells: list[tuple[date, int]] = []
+    commits_per_cell = _INTENSITY_COMMITS[intensity]
+
+    col_cursor = start_col
+    for glyph in glyphs:
+        # glyph rows correspond to font rows 0..4 -> grid rows 1..5 (Mon..Fri)
+        for glyph_row, row_str in enumerate(glyph):
+            grid_row = glyph_row + 1
+            for glyph_col in range(3):
+                if row_str[glyph_col] == "#":
+                    cell_date = grid_start + timedelta(
+                        weeks=col_cursor + glyph_col, days=grid_row
+                    )
+                    cells.append((cell_date, commits_per_cell))
+        col_cursor += 4   # 3 cols glyph + 1 col spacing
+
+    return Canvas(
+        year=year,
+        cells=cells,
+        width_cols=len(weeks),
+        grid_start=grid_start,
+        usable_week_indices=weeks,
+        intensity=intensity,
+        text=text,
+    )
