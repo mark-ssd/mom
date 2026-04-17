@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal
 from mom.errors import NotOurRepoError
-from mom.layout import Canvas, plan
+from mom.layout import Canvas, plan, window_from_state
 
 _STATE_FILE = ".mom-state.json"
 _README_BODY = (
@@ -75,23 +75,21 @@ def rebuild(
     *,
     work_dir: Path,
     remote_url: str,
-    year: int,
     canvas: Canvas | None,
     action: Literal["upsert", "delete"],
+    state_key: str,
     today: date,
 ) -> None:
     """Rebuild the repo's main branch deterministically from state, then force-push.
 
-    action="upsert": write canvas.text for `year` into state (overwriting any prior).
-    action="delete": remove `year` from state.
-    canvas is used only for action="upsert"; for "delete", pass None.
+    action="upsert": write canvas into state at canvas.window.state_key.
+    action="delete": remove state_key from state (canvas can be None).
     """
     ensure_local_clone(work_dir, remote_url)
-    # Bring current main into the tree if it exists (so refuse_if_not_ours can check).
     try:
         _git(work_dir, "checkout", "main")
     except subprocess.CalledProcessError:
-        pass   # branch doesn't exist yet (first run)
+        pass
 
     repo_name = remote_url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
     refuse_if_not_ours(work_dir, repo_name)
@@ -100,21 +98,24 @@ def rebuild(
     drawings = state.setdefault("drawings", {})
     if action == "upsert":
         assert canvas is not None
-        drawings[str(year)] = {
+        drawings[canvas.window.state_key] = {
+            "mode": canvas.window.mode,
+            "ref": canvas.window.ref,
             "text": canvas.text,
             "intensity": canvas.intensity,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     else:
-        drawings.pop(str(year), None)
+        drawings.pop(state_key, None)
 
-    # Regenerate every stored drawing into cells (pure).
+    # Regenerate every stored drawing (pure).
     all_cells: list[tuple[date, int]] = []
-    for y_str, d in drawings.items():
-        c = plan(d["text"], int(y_str), today, d["intensity"])
+    for _, d in drawings.items():
+        window = window_from_state(d["mode"], d["ref"], today)
+        c = plan(d["text"], window, d["intensity"])
         if isinstance(c, Canvas):
             all_cells.extend(c.cells)
-    # else: skip years that no longer fit (could happen if current-year capacity shrunk)
+    # Skip drawings that no longer fit (e.g., current-year capacity shrunk — rare).
     all_cells.sort(key=lambda t: t[0])
 
     # Orphan-reset

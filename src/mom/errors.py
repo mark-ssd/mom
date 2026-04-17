@@ -14,13 +14,13 @@ class UnsupportedCharError(MomError):
 
 
 class FitError(MomError):
-    def __init__(self, required: int, available: int, year: int) -> None:
+    def __init__(self, required: int, available: int, human_desc: str) -> None:
         self.required = required
         self.available = available
-        self.year = year
+        self.human_desc = human_desc
         max_chars = max(0, (available + 1) // 4)
         super().__init__(
-            f"Doesn't fit. Required {required} cols, available {available} for year {year}. "
+            f"Doesn't fit. Required {required} cols, available {available} for {human_desc}. "
             f"Max text: ~{max_chars} chars. Try a different --year or shorten the text."
         )
 

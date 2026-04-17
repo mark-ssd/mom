@@ -4,7 +4,7 @@ description: Draw text on the user's GitHub contribution graph. Use when user
   invokes /mom-canvas <text>, or asks to "write/draw text on my GitHub graph".
   Creates/updates a dedicated GitHub repo with backdated empty commits forming
   pixel-art letters in the 7-row contribution grid. Full ASCII supported,
-  auto-centered, validates fit against year capacity.
+  auto-centered, validates fit against the window's capacity.
 ---
 
 # mom-canvas
@@ -14,7 +14,14 @@ Any non-zero exit halts the flow — surface the error, do NOT proceed.
 
 ## Step 1 — Parse input
 Extract TEXT (required, everything up to `--year`). Extract `--year YYYY`
-(optional; default = current year).
+(optional).
+
+**Default window:** If no `--year` is given, the CLI targets the **trailing
+12-month view** — this is what visitors see on the user's profile by default
+(the "N contributions in the last year" panel). It always has 52 usable columns.
+
+With `--year YYYY`, the CLI targets that specific calendar year tab on the
+profile instead. Current year has reduced capacity (only elapsed weeks).
 
 ## Step 2 — Ensure CLI is installed
 Run: `command -v mom >/dev/null 2>&1 && mom --version`
@@ -65,8 +72,10 @@ Parse JSON:
 - `status == "error"`: surface `error.message` + `error.code`. STOP.
 
 ## Removal
-If the user asks to remove a drawing, suggest: `mom clean --year YYYY`.
-Run it only after explicit confirmation. Mirror the same auth/error handling.
+If the user asks to remove a drawing, suggest: `mom clean <state-key>` where
+`<state-key>` is the identifier shown in previous runs (e.g., `trailing-2026-04-16`
+or `calendar-2024`). Run it only after explicit confirmation.
+Mirror the same auth/error handling as above.
 
 ## Safety
 - Always pass TEXT as a single argv element. Never interpolate user input into

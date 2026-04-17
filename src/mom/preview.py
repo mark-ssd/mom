@@ -1,6 +1,6 @@
 """ASCII renderer for Canvas to terminal-friendly preview."""
 
-from datetime import date, timedelta
+from datetime import timedelta
 from mom.layout import Canvas
 
 _DAY_LABELS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
@@ -12,21 +12,20 @@ def render(canvas: Canvas) -> str:
     """Render a Canvas as an ASCII grid with month header and weekday rows."""
     total_cols = 54
 
-    # Build grid[row][col] = bool
     grid = [[False] * total_cols for _ in range(7)]
     for cell_date, _ in canvas.cells:
-        offset_days = (cell_date - canvas.grid_start).days
+        offset_days = (cell_date - canvas.window.grid_start).days
         col = offset_days // 7
         row = offset_days % 7
         if 0 <= col < total_cols:
             grid[row][col] = True
 
-    # Month header: place month abbreviation at the first column of each month
+    # Month header: place abbreviation at the first column whose Monday is in the
+    # first week of a month. Works for both calendar and trailing windows.
     header_cells = [" "] * total_cols
     for col in range(total_cols):
-        # Use Monday of that week to identify "first week of month"
-        col_date = canvas.grid_start + timedelta(weeks=col, days=1)
-        if col_date.day <= 7 and col_date.year == canvas.year:
+        col_date = canvas.window.grid_start + timedelta(weeks=col, days=1)
+        if col_date.day <= 7:
             month_str = _MONTHS[col_date.month - 1]
             for i, c in enumerate(month_str):
                 if col + i < total_cols:

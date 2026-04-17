@@ -44,6 +44,20 @@ def test_draw_dry_run_fit_fail_exits_3(tmp_xdg, monkeypatch):
     assert data["error"]["kind"] == "fit_fail"
 
 
+def test_draw_default_uses_trailing_window(tmp_xdg, monkeypatch):
+    """No --year → trailing 12-month window (52 cols). 'SSD TECH' fits there."""
+    monkeypatch.setenv("GITHUB_TOKEN", "fake_for_dry_run")
+    result = runner.invoke(app, [
+        "draw", "SSD TECH", "--dry-run", "--format", "json",
+    ])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["status"] == "preview"
+    assert data["fit"]["ok"] is True
+    assert data["fit"]["window"].startswith("trailing-")
+    assert data["fit"]["available_cols"] == 52
+
+
 def test_draw_dry_run_unsupported_char_exits_2(tmp_xdg, monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "fake_for_dry_run")
     result = runner.invoke(app, [

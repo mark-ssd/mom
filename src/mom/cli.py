@@ -13,7 +13,7 @@ from mom.errors import (
     AuthError, FitError, NetworkError,
     NotOurRepoError, UnsupportedCharError,
 )
-from mom.layout import Canvas, Fit, plan
+from mom.layout import Canvas, Fit, calendar_window, plan, trailing_window
 from mom.preview import render
 from mom.config import load, save, resolve_token
 from mom.gh import verify_token, verify_email, ensure_repo
@@ -69,10 +69,17 @@ def _git_user_email() -> str:
     return r.stdout.strip()
 
 
+def _resolve_window(year: Optional[int], today: date):
+    """Trailing window by default; calendar window if --year is given."""
+    if year is None:
+        return trailing_window(today)
+    return calendar_window(year, today)
+
+
 @app.command()
 def draw(
     text: Annotated[str, typer.Argument(help="Text to draw.")],
-    year: Annotated[int, typer.Option(help="Target calendar year.")] = date.today().year,
+    year: Annotated[Optional[int], typer.Option(help="Target calendar year. Omit for trailing 12-month view (default).")] = None,
     repo: Annotated[Optional[str], typer.Option(help="Dedicated repo name.")] = None,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation.")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview + fit check only.")] = False,
@@ -84,17 +91,19 @@ def draw(
     if repo:
         cfg.repo = repo
 
-    # Layout first (pure, cheap, catches fit + char errors without any I/O).
     today = date.today()
+    window = _resolve_window(year, today)
     try:
-        result = plan(text, year, today, intensity)
+        result = plan(text, window, intensity)
     except UnsupportedCharError as e:
         _emit_error(fmt, 2, "unsupported_char", str(e))
     if isinstance(result, Fit):
         _emit_error(
-            fmt, 3, "fit_fail", str(FitError(result.required, result.available, result.year)),
+            fmt, 3, "fit_fail",
+            str(FitError(result.required, result.available, result.window.human_desc)),
             extra={"fit": {"ok": False, "required_cols": result.required,
-                           "available_cols": result.available, "year": result.year}},
+                           "available_cols": result.available,
+                           "window": result.window.state_key}},
         )
     assert isinstance(result, Canvas)
     canvas: Canvas = result
@@ -106,7 +115,8 @@ def draw(
     payload = {
         "status": "preview" if dry_run else "success",
         "fit": {"ok": True, "required_cols": 4 * len(text) - 1,
-                "available_cols": len(canvas.usable_week_indices), "year": year},
+                "available_cols": len(canvas.window.usable_indices),
+                "window": canvas.window.state_key},
         "commits": {"total": total_commits, "date_range": date_range},
         "preview_ascii": preview_ascii,
         "repo_url": None,
@@ -121,7 +131,6 @@ def draw(
             typer.echo(f"\n{total_commits} commits across {len(dates)} dates (dry-run).")
         raise typer.Exit(0)
 
-    # Auth + GitHub calls.
     try:
         tok = resolve_token(token)
         user = verify_token(tok)
@@ -138,23 +147,20 @@ def draw(
     except NetworkError as e:
         _emit_error(fmt, 5, "network", str(e))
 
-    # Confirm (skipped by --yes).
     if not yes and fmt is Format.text:
         typer.echo(preview_ascii)
         typer.echo(f"\n{total_commits} commits across {len(dates)} dates.")
-        ok = typer.confirm("Proceed?")
-        if not ok:
+        if not typer.confirm("Proceed?"):
             raise typer.Exit(0)
 
-    # Execute.
     try:
         work_dir = Path.home() / ".cache" / "mom" / cfg.repo
         rebuild(
             work_dir=work_dir,
             remote_url=auth_clone,
-            year=year,
             canvas=canvas,
             action="upsert",
+            state_key=canvas.window.state_key,
             today=today,
         )
     except NotOurRepoError as e:
@@ -173,21 +179,23 @@ def draw(
 @app.command()
 def preview(
     text: Annotated[str, typer.Argument()],
-    year: Annotated[int, typer.Option()] = date.today().year,
+    year: Annotated[Optional[int], typer.Option(help="Calendar year; omit for trailing 12-month view.")] = None,
     fmt: Annotated[Format, typer.Option("--format")] = Format.text,
     intensity: Annotated[int, typer.Option()] = 4,
 ) -> None:
     """Alias for `draw --dry-run`."""
     today = date.today()
+    window = _resolve_window(year, today)
     try:
-        result = plan(text, year, today, intensity)
+        result = plan(text, window, intensity)
     except UnsupportedCharError as e:
         _emit_error(fmt, 2, "unsupported_char", str(e))
     if isinstance(result, Fit):
         _emit_error(fmt, 3, "fit_fail",
-                    str(FitError(result.required, result.available, result.year)),
+                    str(FitError(result.required, result.available, result.window.human_desc)),
                     extra={"fit": {"ok": False, "required_cols": result.required,
-                                   "available_cols": result.available, "year": result.year}})
+                                   "available_cols": result.available,
+                                   "window": result.window.state_key}})
     assert isinstance(result, Canvas)
     preview_ascii = render(result)
     total = sum(n for _, n in result.cells)
@@ -195,7 +203,8 @@ def preview(
     payload = {
         "status": "preview",
         "fit": {"ok": True, "required_cols": 4 * len(text) - 1,
-                "available_cols": len(result.usable_week_indices), "year": year},
+                "available_cols": len(result.window.usable_indices),
+                "window": result.window.state_key},
         "commits": {"total": total,
                     "date_range": [dates[0].isoformat(), dates[-1].isoformat()] if dates else []},
         "preview_ascii": preview_ascii, "repo_url": None, "error": None,
@@ -208,13 +217,13 @@ def preview(
 
 @app.command()
 def clean(
-    year: Annotated[int, typer.Option(help="Year to remove.")],
+    key: Annotated[str, typer.Argument(help="State key to remove, e.g. 'calendar-2024' or 'trailing-2026-04-16'. Use `mom config show` to list.")],
     repo: Annotated[Optional[str], typer.Option()] = None,
     yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
     fmt: Annotated[Format, typer.Option("--format")] = Format.text,
     token: Annotated[Optional[str], typer.Option()] = None,
 ) -> None:
-    """Remove a year's drawing from the dedicated repo."""
+    """Remove a drawing (by state key) from the dedicated repo."""
     cfg = load()
     if repo:
         cfg.repo = repo
@@ -229,7 +238,7 @@ def clean(
         _emit_error(fmt, 5, "network", str(e))
 
     if not yes and fmt is Format.text:
-        if not typer.confirm(f"Remove year {year} from {cfg.repo}?"):
+        if not typer.confirm(f"Remove '{key}' from {cfg.repo}?"):
             raise typer.Exit(0)
 
     today = date.today()
@@ -237,7 +246,7 @@ def clean(
         work_dir = Path.home() / ".cache" / "mom" / cfg.repo
         rebuild(
             work_dir=work_dir, remote_url=auth_clone,
-            year=year, canvas=None, action="delete", today=today,
+            canvas=None, action="delete", state_key=key, today=today,
         )
     except NotOurRepoError as e:
         _emit_error(fmt, 1, "not_our_repo", str(e))
@@ -245,9 +254,9 @@ def clean(
         _emit_error(fmt, 5, "push_rejected", f"git failed: {(e.stderr or '')[:500]}")
 
     if fmt is Format.json:
-        typer.echo(_json.dumps({"status": "success", "repo_url": html_url, "year_removed": year}))
+        typer.echo(_json.dumps({"status": "success", "repo_url": html_url, "removed": key}))
     else:
-        typer.echo(f"Removed year {year}. View at {html_url}")
+        typer.echo(f"Removed '{key}'. View at {html_url}")
 
 
 @config_app.command("check")

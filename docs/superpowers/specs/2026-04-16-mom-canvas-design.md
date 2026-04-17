@@ -1,7 +1,7 @@
 # mom-canvas — Design Spec
 
 **Date:** 2026-04-16
-**Status:** Draft (awaiting review)
+**Status:** Implemented, amended 2026-04-16 (see §14)
 **Owner:** mark-ssd (aveyurov@gmail.com)
 **Repo:** `github.com/mark-ssd/mom`
 
@@ -402,3 +402,15 @@ TDD per superpowers test-driven-development skill. Each layer has a clear test a
 
 - None blocking. Owner confirmed (`mark-ssd/mom`), package name (`mom-canvas`), repo name (`mom-canvas`), font (Tom Thumb 3×5), and all UX decisions.
 - Publication to PyPI is post-v1; first-release install path is `pipx install git+https://github.com/mark-ssd/mom`.
+
+## 14. Amendment — Trailing window as default (2026-04-16)
+
+Original spec targeted a specific calendar year when `--year` was omitted (defaulting to current year). This caused poor UX early in a calendar year: for most of January–April, current-year capacity is too low to fit typical text, and — crucially — the profile view visitors see by default is the **trailing 12-month window**, not any specific calendar year.
+
+**Change:** The CLI now accepts an optional `--year YYYY`. When omitted, it targets the trailing 12-month window (52 complete weeks ending at the most recent completed Saturday). `--year YYYY` still works as before for targeting a specific calendar year tab.
+
+**Implementation:** A `Window` abstraction replaces the raw `year: int` parameter throughout. Two factories — `calendar_window(year, today)` and `trailing_window(ref_date)` — construct `Window` values that carry `state_key` (e.g. `trailing-2026-04-16` or `calendar-2024`) and `human_desc` for messaging.
+
+**State format:** `.mom-state.json` keys drawings by `state_key` (was just year-as-string). Each entry stores `mode` (`"calendar"` | `"trailing"`), `ref` (year or ISO date), `text`, `intensity`, `updated_at`. On rebuild, each drawing's window is reconstructed deterministically from `mode` + `ref`.
+
+**CLI surface change:** `mom clean --year YYYY` became `mom clean <state-key>` (positional arg), since a state key now fully identifies a drawing. Auth and push paths are unchanged.

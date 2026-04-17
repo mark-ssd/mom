@@ -1,33 +1,33 @@
 from datetime import date
-from mom.layout import Canvas, Fit, usable_weeks
+import pytest
+from mom.layout import (
+    Canvas, Fit, Window,
+    usable_weeks, required_cols, check_fit, plan,
+    calendar_window, trailing_window, window_from_state,
+)
+from mom.errors import UnsupportedCharError
 
+
+# ---- usable_weeks ----
 
 def test_usable_weeks_past_year_2024():
-    # 2024: Jan 1 is Monday. Weeks whose Mon-Fri are all in 2024 -> 52.
     today = date(2026, 4, 16)
-    weeks = usable_weeks(2024, today)
-    assert len(weeks) == 52
+    assert len(usable_weeks(2024, today)) == 52
 
 
 def test_usable_weeks_past_year_2022():
-    # 2022: Jan 1 = Sat, first eligible Mon = Jan 3, last eligible Fri = Dec 30 -> 52.
     today = date(2026, 4, 16)
-    weeks = usable_weeks(2022, today)
-    assert len(weeks) == 52
+    assert len(usable_weeks(2022, today)) == 52
 
 
 def test_usable_weeks_current_year_partial():
-    # As of Thursday Apr 16 2026, weeks Jan 5-9 through Apr 6-10 = 14 usable.
-    today = date(2026, 4, 16)
-    weeks = usable_weeks(2026, today)
-    assert len(weeks) == 14
+    today = date(2026, 4, 16)   # Thursday
+    assert len(usable_weeks(2026, today)) == 14
 
 
 def test_usable_weeks_current_year_cutoff_on_saturday():
-    # If today is Saturday, the full current week is usable.
-    today = date(2026, 4, 18)   # Sat in week Apr 12-18
-    weeks = usable_weeks(2026, today)
-    assert len(weeks) == 15
+    today = date(2026, 4, 18)   # Saturday
+    assert len(usable_weeks(2026, today)) == 15
 
 
 def test_usable_weeks_future_year_empty():
@@ -35,140 +35,201 @@ def test_usable_weeks_future_year_empty():
     assert usable_weeks(2027, today) == []
 
 
-def test_usable_weeks_indices_are_grid_relative():
-    # The returned indices are relative to grid_start = Sunday on-or-before Jan 1.
-    # For 2024 (Jan 1 = Mon), grid_start = Dec 31 2023. First usable week is index 0
-    # (its Mon-Fri Jan 1-5 are all 2024).
+# ---- calendar_window ----
+
+def test_calendar_window_for_2024():
     today = date(2026, 4, 16)
-    weeks = usable_weeks(2024, today)
-    assert weeks[0] == 0
+    w = calendar_window(2024, today)
+    assert w.mode == "calendar"
+    assert w.ref == "2024"
+    assert w.state_key == "calendar-2024"
+    assert w.human_desc == "year 2024"
+    assert len(w.usable_indices) == 52
 
 
-def test_canvas_dataclass_fields():
-    from datetime import date as d
-    c = Canvas(
-        year=2024,
-        cells=[(d(2024, 6, 1), 20)],
-        width_cols=52,
-        grid_start=d(2023, 12, 31),
-        usable_week_indices=list(range(52)),
-        intensity=4,
-        text="HI",
-    )
-    assert c.year == 2024
-    assert c.cells == [(d(2024, 6, 1), 20)]
+def test_calendar_window_current_year_partial():
+    today = date(2026, 4, 16)
+    w = calendar_window(2026, today)
+    assert len(w.usable_indices) == 14
 
 
-def test_fit_dataclass_fields():
-    f = Fit(ok=False, required=43, available=14, year=2026)
-    assert f.ok is False
-    assert f.required == 43
+# ---- trailing_window ----
+
+def test_trailing_window_has_52_cols():
+    ref = date(2026, 4, 16)   # Thursday
+    w = trailing_window(ref)
+    assert len(w.usable_indices) == 52
 
 
-from mom.layout import required_cols, check_fit
+def test_trailing_window_state_key_format():
+    w = trailing_window(date(2026, 4, 16))
+    assert w.state_key == "trailing-2026-04-16"
+    assert w.ref == "2026-04-16"
+    assert w.mode == "trailing"
 
+
+def test_trailing_window_ends_at_most_recent_completed_saturday():
+    # Today = Thu Apr 16 2026. Last completed Sat = Apr 11. End-week Sun = Apr 5.
+    ref = date(2026, 4, 16)
+    w = trailing_window(ref)
+    # Last usable week start (Sun) is grid_start + 51*7 days
+    from datetime import timedelta
+    last_week_sun = w.grid_start + timedelta(weeks=51)
+    assert last_week_sun == date(2026, 4, 5)
+    # And the grid_start should be 51 weeks earlier = Apr 13 2025 (Sun)
+    assert w.grid_start == date(2025, 4, 13)
+
+
+def test_trailing_window_on_saturday_includes_that_week():
+    # Today = Sat Apr 18 2026. Last Sat = itself. End-week Sun = Apr 12.
+    ref = date(2026, 4, 18)
+    w = trailing_window(ref)
+    from datetime import timedelta
+    last_week_sun = w.grid_start + timedelta(weeks=51)
+    assert last_week_sun == date(2026, 4, 12)
+
+
+# ---- required_cols, check_fit ----
 
 def test_required_cols_one_char():
-    assert required_cols("A") == 3     # 1*3 + 0 = 3
+    assert required_cols("A") == 3
 
 
 def test_required_cols_two_chars():
-    assert required_cols("HI") == 7    # 2*3 + 1 = 7
+    assert required_cols("HI") == 7
 
 
 def test_required_cols_empty_raises():
-    import pytest
     with pytest.raises(ValueError):
         required_cols("")
 
 
 def test_required_cols_hello_world():
-    assert required_cols("HELLO WORLD") == 43   # 11*3 + 10 = 43
+    assert required_cols("HELLO WORLD") == 43
 
 
 def test_check_fit_exact_fit():
-    # required 14, available 14 -> ok
-    f = check_fit(14, 14, year=2024)
+    w = calendar_window(2024, date(2026, 4, 16))
+    f = check_fit(14, 14, w)
     assert f.ok is True
 
 
 def test_check_fit_overflow_by_one():
-    f = check_fit(15, 14, year=2026)
+    w = calendar_window(2026, date(2026, 4, 16))
+    f = check_fit(15, 14, w)
     assert f.ok is False
     assert f.required == 15
     assert f.available == 14
 
 
-def test_check_fit_under():
-    f = check_fit(3, 52, year=2024)
-    assert f.ok is True
+# ---- plan ----
 
-
-from datetime import date as _d
-from mom.layout import plan
-from mom.errors import UnsupportedCharError
-
-
-def test_plan_returns_canvas_for_valid_input():
-    today = _d(2026, 4, 16)
-    result = plan("HI", year=2024, today=today, intensity=4)
+def test_plan_calendar_returns_canvas_for_valid_input():
+    today = date(2026, 4, 16)
+    w = calendar_window(2024, today)
+    result = plan("HI", w, intensity=4)
     assert isinstance(result, Canvas)
     assert result.text == "HI"
-    assert result.year == 2024
+    assert result.window.state_key == "calendar-2024"
     assert result.intensity == 4
 
 
+def test_plan_trailing_returns_canvas_and_fits_ssd_tech():
+    today = date(2026, 4, 16)
+    w = trailing_window(today)
+    result = plan("SSD TECH", w, intensity=4)
+    assert isinstance(result, Canvas)
+    # 8 chars: 4*8-1 = 31 cols. 52 available in trailing window.
+    assert result.window.state_key == "trailing-2026-04-16"
+
+
 def test_plan_cell_count_matches_glyph_pixels():
-    # "HI" in 3x5: H has 11 on-pixels (2+2+3+2+2), I has 9 (3+1+1+1+3) -> 20 cells.
-    today = _d(2026, 4, 16)
-    c = plan("HI", year=2024, today=today, intensity=4)
+    # "HI": H=11 (2+2+3+2+2), I=9 (3+1+1+1+3) = 20 cells.
+    today = date(2026, 4, 16)
+    w = calendar_window(2024, today)
+    c = plan("HI", w, intensity=4)
     assert len(c.cells) == 20
 
 
 def test_plan_commit_count_scales_with_intensity():
-    today = _d(2026, 4, 16)
-    c4 = plan("A", year=2024, today=today, intensity=4)
-    c1 = plan("A", year=2024, today=today, intensity=1)
+    today = date(2026, 4, 16)
+    w = calendar_window(2024, today)
+    c4 = plan("A", w, intensity=4)
+    c1 = plan("A", w, intensity=1)
     total4 = sum(n for _, n in c4.cells)
     total1 = sum(n for _, n in c1.cells)
-    assert total4 == 4 * total1   # 20 vs 5
+    assert total4 == 4 * total1
 
 
 def test_plan_centers_horizontally():
-    # "A" in 2024 (52 cols). required=3. pad=(52-3)//2 = 24. start_col=usable[24]=24.
-    today = _d(2026, 4, 16)
-    c = plan("A", year=2024, today=today, intensity=4)
-    min_col = min((cell_date - c.grid_start).days // 7 for cell_date, _ in c.cells)
-    max_col = max((cell_date - c.grid_start).days // 7 for cell_date, _ in c.cells)
+    # "A" in 2024 (52 cols). required=3. pad=24. start_col=usable[24]=24.
+    today = date(2026, 4, 16)
+    w = calendar_window(2024, today)
+    c = plan("A", w, intensity=4)
+    min_col = min((d - c.window.grid_start).days // 7 for d, _ in c.cells)
+    max_col = max((d - c.window.grid_start).days // 7 for d, _ in c.cells)
     assert min_col == 24
-    assert max_col == 26   # 3 cols wide
+    assert max_col == 26
 
 
-def test_plan_rejects_when_too_wide_returns_fit():
-    today = _d(2026, 4, 16)
-    result = plan("HELLO WORLD", year=2026, today=today, intensity=4)
+def test_plan_rejects_too_wide_returns_fit_fail():
+    today = date(2026, 4, 16)
+    w = calendar_window(2026, today)
+    result = plan("HELLO WORLD", w, intensity=4)
     assert isinstance(result, Fit)
     assert result.ok is False
 
 
 def test_plan_future_year_returns_fit_fail():
-    today = _d(2026, 4, 16)
-    result = plan("HI", year=2027, today=today, intensity=4)
+    today = date(2026, 4, 16)
+    w = calendar_window(2027, today)
+    result = plan("HI", w, intensity=4)
     assert isinstance(result, Fit)
     assert result.ok is False
 
 
 def test_plan_unsupported_char_raises():
-    import pytest
-    today = _d(2026, 4, 16)
+    today = date(2026, 4, 16)
+    w = calendar_window(2024, today)
     with pytest.raises(UnsupportedCharError):
-        plan("HI\u2764", year=2024, today=today, intensity=4)
+        plan("HI\u2764", w, intensity=4)
 
 
 def test_plan_cells_use_rows_1_to_5():
-    # Font occupies Mon-Fri (weekday 0-4 -> sun-offset 1-5).
-    today = _d(2026, 4, 16)
-    c = plan("A", year=2024, today=today, intensity=4)
+    today = date(2026, 4, 16)
+    w = calendar_window(2024, today)
+    c = plan("A", w, intensity=4)
     for cell_date, _ in c.cells:
-        offset = (cell_date - c.grid_start).days % 7
+        offset = (cell_date - c.window.grid_start).days % 7
         assert 1 <= offset <= 5
+
+
+def test_plan_trailing_cell_dates_span_two_years():
+    # trailing window spans across year boundary (Apr 2025 -> Apr 2026)
+    today = date(2026, 4, 16)
+    w = trailing_window(today)
+    c = plan("SSD TECH", w, intensity=4)
+    years = {d.year for d, _ in c.cells}
+    # Drawing is centered; with 52 cols and text needing 31, centered at col 10..41.
+    # Those dates should all be in 2025 or 2026.
+    assert years <= {2025, 2026}
+
+
+# ---- window_from_state ----
+
+def test_window_from_state_calendar():
+    today = date(2026, 4, 16)
+    w = window_from_state("calendar", "2024", today)
+    assert w.state_key == "calendar-2024"
+    assert len(w.usable_indices) == 52
+
+
+def test_window_from_state_trailing():
+    w = window_from_state("trailing", "2026-04-16", date(2026, 5, 1))
+    assert w.state_key == "trailing-2026-04-16"
+    assert len(w.usable_indices) == 52
+
+
+def test_window_from_state_unknown_mode_raises():
+    with pytest.raises(ValueError):
+        window_from_state("unknown", "x", date(2026, 4, 16))

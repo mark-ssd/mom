@@ -9,6 +9,10 @@ Give it a string like `HELLO WORLD`. It renders the text as pixel art in a
 the drawing as backdated empty commits in a dedicated GitHub repo. Once pushed,
 the text appears on your profile graph.
 
+**Default target:** the trailing 12-month view — what visitors see by default
+on your profile. Always 52 columns of capacity. Use `--year YYYY` to target
+a specific calendar-year tab instead.
+
 ## Install (with Claude)
 
 Ask Claude:
@@ -48,9 +52,10 @@ mom draw "HELLO WORLD" --year 2024
 
 | Command | Purpose |
 |---|---|
-| `mom draw TEXT --year YYYY` | Plan + preview + confirm + commit + push |
-| `mom preview TEXT --year YYYY` | Alias for `draw --dry-run` |
-| `mom clean --year YYYY` | Remove a year's drawing |
+| `mom draw TEXT` | Trailing 12-month view (default); plan + preview + confirm + commit + push |
+| `mom draw TEXT --year YYYY` | Target a specific calendar year instead |
+| `mom preview TEXT [--year YYYY]` | Alias for `draw --dry-run` |
+| `mom clean <state-key>` | Remove a drawing, e.g. `trailing-2026-04-16` or `calendar-2024` |
 | `mom config check` | Verify auth is working |
 | `mom config set-token TOKEN` | Save a PAT to config |
 | `mom config show` | Print config (token redacted) |
@@ -64,9 +69,14 @@ bitmaps are too small for meaningful case distinction.
 ## How capacity works
 
 Each letter is 3 cols wide with 1-col spacing, so `required_cols = 4N - 1`
-for N characters. The GitHub year view has ~52 usable columns for past
-years and fewer for the current year (only weeks whose Saturday has already
-passed count). The CLI prints the exact available capacity on a fit failure.
+for N characters.
+
+- **Trailing 12-month view** (default): always 52 complete weeks ending with
+  the most recent completed Saturday. Fits ~13 characters.
+- **Calendar year** (`--year YYYY`): 52 weeks for a past year; only the
+  elapsed weeks for the current year (so less capacity early in the year).
+
+The CLI prints the exact available capacity on a fit failure.
 
 ## Safety
 

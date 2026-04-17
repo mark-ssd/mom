@@ -21,10 +21,10 @@ def test_unsupported_char_carries_char():
 
 
 def test_fit_error_carries_numbers():
-    err = FitError(required=43, available=14, year=2026)
+    err = FitError(required=43, available=14, human_desc="year 2026")
     assert err.required == 43
     assert err.available == 14
-    assert err.year == 2026
+    assert err.human_desc == "year 2026"
     assert "43" in str(err) and "14" in str(err)
 
 

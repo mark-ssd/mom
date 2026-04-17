@@ -10,7 +10,7 @@ from mom.git_ops import (
     refuse_if_not_ours,
     rebuild,
 )
-from mom.layout import plan
+from mom.layout import plan, calendar_window, trailing_window
 from mom.errors import NotOurRepoError
 
 
@@ -74,13 +74,14 @@ def test_refuse_if_not_ours_passes_on_good_marker(tmp_path):
 def test_rebuild_creates_expected_commits(tmp_path, bare_origin, author_env):
     work = tmp_path / "work"
     today = date(2026, 4, 16)
-    canvas = plan("A", year=2024, today=today, intensity=1)  # intensity 1 -> 5 commits/cell
+    w = calendar_window(2024, today)
+    canvas = plan("A", w, intensity=1)  # intensity 1 -> 5 commits/cell
     rebuild(
         work_dir=work,
         remote_url=f"file://{bare_origin}",
-        year=2024,
         canvas=canvas,
         action="upsert",
+        state_key=canvas.window.state_key,
         today=today,
     )
     # A has 10 on-pixels (1+2+3+2+2) x 5 commits + 1 initial "rebuild" commit = 51.
@@ -89,6 +90,30 @@ def test_rebuild_creates_expected_commits(tmp_path, bare_origin, author_env):
         check=True, capture_output=True, text=True,
     ).stdout.splitlines()
     assert len(log) == 10 * 5 + 1
+
+
+def test_rebuild_trailing_window_creates_cross_year_commits(tmp_path, bare_origin, author_env):
+    """Trailing drawings span 2 calendar years; commits should land in both."""
+    work = tmp_path / "work"
+    today = date(2026, 4, 16)
+    w = trailing_window(today)
+    canvas = plan("SSD TECH", w, intensity=1)
+    rebuild(
+        work_dir=work,
+        remote_url=f"file://{bare_origin}",
+        canvas=canvas,
+        action="upsert",
+        state_key=canvas.window.state_key,
+        today=today,
+    )
+    # Verify state file contains mode=trailing and ref=today
+    import json
+    state = json.loads((work / ".mom-state.json").read_text())
+    assert "trailing-2026-04-16" in state["drawings"]
+    d = state["drawings"]["trailing-2026-04-16"]
+    assert d["mode"] == "trailing"
+    assert d["ref"] == "2026-04-16"
+    assert d["text"] == "SSD TECH"
 
 
 def test_rebuild_refuses_repo_missing_state(tmp_path, bare_origin, author_env):
@@ -104,13 +129,14 @@ def test_rebuild_refuses_repo_missing_state(tmp_path, bare_origin, author_env):
 
     work = tmp_path / "work"
     today = date(2026, 4, 16)
-    canvas = plan("A", year=2024, today=today, intensity=1)
+    w = calendar_window(2024, today)
+    canvas = plan("A", w, intensity=1)
     with pytest.raises(NotOurRepoError):
         rebuild(
             work_dir=work,
             remote_url=f"file://{bare_origin}",
-            year=2024,
             canvas=canvas,
             action="upsert",
+            state_key=canvas.window.state_key,
             today=today,
         )
