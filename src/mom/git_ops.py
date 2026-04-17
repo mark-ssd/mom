@@ -7,7 +7,7 @@ import subprocess
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal
-from mom.errors import NotOurRepoError
+from mom.errors import AuthError, NotOurRepoError
 from mom.layout import Canvas, plan, window_from_state
 
 _STATE_FILE = ".mom-state.json"
@@ -71,32 +71,8 @@ def refuse_if_not_ours(work_dir: Path, repo_name: str) -> None:
         raise NotOurRepoError(repo_name)
 
 
-def rebuild(
-    *,
-    work_dir: Path,
-    remote_url: str,
-    canvas: Canvas | None,
-    action: Literal["upsert", "delete"],
-    state_key: str,
-    today: date,
-    author_name: str,
-    author_email: str,
-) -> None:
-    """Rebuild the repo's main branch deterministically from state, then force-push.
-
-    action="upsert": write canvas into state at canvas.window.state_key.
-    action="delete": remove state_key from state (canvas can be None).
-    """
-    ensure_local_clone(work_dir, remote_url)
-    try:
-        _git(work_dir, "checkout", "main")
-    except subprocess.CalledProcessError:
-        pass
-
-    repo_name = remote_url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
-    refuse_if_not_ours(work_dir, repo_name)
-
-    state = read_state(work_dir)
+def update_state(state: dict, canvas: Canvas | None,
+                 action: Literal["upsert", "delete"], state_key: str) -> dict:
     drawings = state.setdefault("drawings", {})
     if action == "upsert":
         assert canvas is not None
@@ -109,16 +85,108 @@ def rebuild(
         }
     else:
         drawings.pop(state_key, None)
+    return state
 
-    # Regenerate every stored drawing (pure).
+
+def read_existing_state(work_dir: Path, remote_url: str | None, repo_name: str) -> dict:
+    """Clone the remote (if it exists), verify ownership, return state.
+    Returns a fresh empty state if no remote yet."""
+    if remote_url is None:
+        return {"managed_by": "mom", "version": 1, "drawings": {}}
+    ensure_local_clone(work_dir, remote_url)
+    try:
+        _git(work_dir, "checkout", "main")
+    except subprocess.CalledProcessError:
+        pass
+    refuse_if_not_ours(work_dir, repo_name)
+    return read_state(work_dir)
+
+
+def _cells_from_state(state: dict, today: date) -> list[tuple[date, int]]:
     all_cells: list[tuple[date, int]] = []
-    for _, d in drawings.items():
+    for _, d in state.get("drawings", {}).items():
         window = window_from_state(d["mode"], d["ref"], today)
         c = plan(d["text"], window, d["intensity"])
         if isinstance(c, Canvas):
             all_cells.extend(c.cells)
-    # Skip drawings that no longer fit (e.g., current-year capacity shrunk — rare).
     all_cells.sort(key=lambda t: t[0])
+    return all_cells
+
+
+def build_and_push(
+    *,
+    work_dir: Path,
+    remote_url: str,
+    state: dict,
+    today: date,
+    author_name: str,
+    author_email: str,
+) -> None:
+    """Initialise a fresh local repo from state and push to an empty remote.
+
+    Use this after delete+create to avoid leaving force-push orphans on GitHub.
+    """
+    import shutil
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    _git(work_dir, "init", "-b", "main")
+    _git(work_dir, "remote", "add", "origin", remote_url)
+
+    (work_dir / "README.md").write_text(_README_BODY)
+    write_state(work_dir, state)
+    _git(work_dir, "add", ".")
+
+    author_env = {
+        "GIT_AUTHOR_NAME": author_name,
+        "GIT_AUTHOR_EMAIL": author_email,
+        "GIT_COMMITTER_NAME": author_name,
+        "GIT_COMMITTER_EMAIL": author_email,
+    }
+
+    all_cells = _cells_from_state(state, today)
+    seed_date = (all_cells[0][0] if all_cells else today)
+    _git(work_dir, "commit", "-m", "rebuild",
+         env=_merged_env({**_date_env(seed_date), **author_env}))
+
+    for d, count in all_cells:
+        env = _merged_env({**_date_env(d), **author_env})
+        for n in range(count):
+            _git(work_dir, "commit", "--allow-empty",
+                 "-m", f"canvas {d.isoformat()} #{n + 1}", env=env)
+
+    _git(work_dir, "push", "-u", "origin", "main")
+
+
+def rebuild(
+    *,
+    work_dir: Path,
+    remote_url: str,
+    canvas: Canvas | None,
+    action: Literal["upsert", "delete"],
+    state_key: str,
+    today: date,
+    author_name: str,
+    author_email: str,
+) -> None:
+    """Legacy force-push rebuild (fallback when delete_repo scope is missing).
+
+    Force-pushes an orphan history onto `main`. Previously pushed commits
+    are unreachable from refs but may linger in GitHub's contribution index
+    for ~90 days, inflating counts. Prefer the delete-and-recreate flow
+    in the CLI when the token has `delete_repo` scope.
+    """
+    ensure_local_clone(work_dir, remote_url)
+    try:
+        _git(work_dir, "checkout", "main")
+    except subprocess.CalledProcessError:
+        pass
+
+    repo_name = remote_url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+    refuse_if_not_ours(work_dir, repo_name)
+
+    state = update_state(read_state(work_dir), canvas, action, state_key)
+    all_cells = _cells_from_state(state, today)
 
     # Orphan-reset
     _git(work_dir, "checkout", "--orphan", "_build")

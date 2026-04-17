@@ -37,18 +37,21 @@ Run: `mom config check --format json`
 Parse the JSON:
 - `status == "ok"` → proceed to Step 4.
 - `error.kind == "auth_missing"`:
-    1. Ask user: "I need a GitHub Personal Access Token with `repo` scope.
-       Create one at
-       https://github.com/settings/tokens/new?scopes=repo&description=mom-canvas
+    1. Ask user: "I need a GitHub Personal Access Token with `repo` and
+       `delete_repo` scopes. Create one at
+       https://github.com/settings/tokens/new?scopes=repo,delete_repo&description=mom-canvas
        and paste it here. It'll be saved to ~/.config/mom/config.json
        (chmod 600; never sent anywhere else)."
     2. Once user pastes, run: `mom config set-token <TOKEN>` (pass token as argv, not interpolated into a shell string).
     3. Re-run `mom config check --format json`. Proceed if ok; otherwise surface error.
 - `error.kind == "auth_invalid"` or `"auth_scope"`: surface the error
-    message verbatim, tell the user to regenerate the PAT with `repo`
-    scope, and STOP.
-- `error.kind == "email_mismatch"`: surface the error verbatim and STOP.
-    The user must fix `git config user.email` themselves — do NOT auto-edit git config.
+    message verbatim, tell the user to regenerate the PAT with both
+    `repo` and `delete_repo` scopes, and STOP.
+
+**Why `delete_repo` scope?** On re-runs, mom deletes and recreates the
+dedicated repo to avoid leaving orphan commits that GitHub keeps counting
+for up to 90 days. Without `delete_repo` scope, mom falls back to
+force-push and warns about the inflation risk.
 
 ## Step 4 — Preview + fit check
 Run: `mom draw "$TEXT" --year $YEAR --dry-run --format json`
@@ -69,7 +72,14 @@ On confirmation, run: `mom draw "$TEXT" --year $YEAR --yes --format json`
 Parse JSON:
 - `status == "success"`: tell user: "Done. View your canvas at `<repo_url>`.
     The contribution graph updates within a few minutes."
-- `status == "error"`: surface `error.message` + `error.code`. STOP.
+- `status == "error"` with `error.kind == "auth_scope"` that mentions
+    `delete_repo`: tell the user:
+    "Your token is missing the `delete_repo` scope. Run in your prompt:
+    `!gh auth refresh -h github.com -s delete_repo`
+    (or regenerate your PAT with `delete_repo` checked). Then re-run
+    /mom-canvas."
+    STOP.
+- Other `status == "error"`: surface `error.message` + `error.code`. STOP.
 
 ## Removal
 If the user asks to remove a drawing, suggest: `mom clean <state-key>` where

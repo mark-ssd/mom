@@ -16,8 +16,13 @@ from mom.errors import (
 from mom.layout import Canvas, Fit, calendar_window, plan, trailing_window
 from mom.preview import render
 from mom.config import load, save, resolve_token
-from mom.gh import verify_token, ensure_repo, noreply_email
-from mom.git_ops import rebuild
+from mom.gh import (
+    verify_token, ensure_repo, noreply_email,
+    delete_repo, create_repo, get_repo,
+)
+from mom.git_ops import (
+    rebuild, build_and_push, read_existing_state, update_state,
+)
 
 app = typer.Typer(
     help="Draw text on your GitHub contribution graph.",
@@ -139,10 +144,23 @@ def draw(
         if not cfg.github_user:
             cfg.github_user = login
             save(cfg)
-        clone_url, html_url = ensure_repo(tok, login, cfg.repo)
-        auth_clone = clone_url.replace("https://", f"https://x-access-token:{tok}@")
+
+        # Look up existing repo (if any) to read its state before we nuke it.
+        existing = get_repo(tok, login, cfg.repo)
+        work_dir = Path.home() / ".cache" / "mom" / cfg.repo
+        repo_existed = existing is not None
+        if existing:
+            clone_url, html_url = existing
+            auth_clone = clone_url.replace("https://", f"https://x-access-token:{tok}@")
+            state = read_existing_state(work_dir, auth_clone, cfg.repo)
+        else:
+            state = read_existing_state(work_dir, None, cfg.repo)
+
+        state = update_state(state, canvas, "upsert", canvas.window.state_key)
     except AuthError as e:
         _emit_error(fmt, 4, e.kind, str(e))
+    except NotOurRepoError as e:
+        _emit_error(fmt, 1, "not_our_repo", str(e))
     except NetworkError as e:
         _emit_error(fmt, 5, "network", str(e))
 
@@ -154,22 +172,53 @@ def draw(
             raise typer.Exit(0)
 
     try:
-        work_dir = Path.home() / ".cache" / "mom" / cfg.repo
-        rebuild(
-            work_dir=work_dir,
-            remote_url=auth_clone,
-            canvas=canvas,
-            action="upsert",
-            state_key=canvas.window.state_key,
-            today=today,
-            author_name=login,
-            author_email=author_email,
+        if repo_existed:
+            # Prefer delete + create so GitHub doesn't retain orphan counts
+            # from previous pushes. Fall back to force-push if delete_repo
+            # scope is missing.
+            try:
+                delete_repo(tok, login, cfg.repo)
+                repo_existed = False
+            except AuthError as e:
+                if e.kind != "auth_scope":
+                    raise
+                if fmt is Format.text:
+                    typer.echo(
+                        f"warning: {e}\n"
+                        f"Falling back to force-push. This can inflate your "
+                        f"contribution count for up to 90 days until GitHub "
+                        f"garbage-collects orphan commits. Recommended: add "
+                        f"the scope and rerun.",
+                        err=True,
+                    )
+                # Legacy path: force-push into existing repo.
+                rebuild(
+                    work_dir=work_dir, remote_url=auth_clone,
+                    canvas=canvas, action="upsert",
+                    state_key=canvas.window.state_key,
+                    today=today, author_name=login, author_email=author_email,
+                )
+                _post_rebuild(fmt, payload, html_url)
+                return
+
+        # Fresh create (repo doesn't exist or was just deleted).
+        clone_url, html_url = create_repo(tok, cfg.repo)
+        auth_clone = clone_url.replace("https://", f"https://x-access-token:{tok}@")
+        build_and_push(
+            work_dir=work_dir, remote_url=auth_clone, state=state,
+            today=today, author_name=login, author_email=author_email,
         )
-    except NotOurRepoError as e:
-        _emit_error(fmt, 1, "not_our_repo", str(e))
+    except AuthError as e:
+        _emit_error(fmt, 4, e.kind, str(e))
+    except NetworkError as e:
+        _emit_error(fmt, 5, "network", str(e))
     except subprocess.CalledProcessError as e:
         _emit_error(fmt, 5, "push_rejected", f"git failed: {(e.stderr or '')[:500]}")
 
+    _post_rebuild(fmt, payload, html_url)
+
+
+def _post_rebuild(fmt: "Format", payload: dict, html_url: str) -> None:
     payload["repo_url"] = html_url
     payload["status"] = "success"
     if fmt is Format.json:

@@ -86,6 +86,68 @@ def verify_email(token: str, git_email: str) -> str | None:
     return None
 
 
+def delete_repo(token: str, owner: str, name: str) -> None:
+    """Delete the repo if it exists. Idempotent.
+
+    Raises AuthError(kind="auth_scope") on 403 (missing `delete_repo` scope).
+    Raises NetworkError on other failures.
+    """
+    try:
+        r = requests.delete(
+            f"{_API}/repos/{owner}/{name}", headers=_headers(token), timeout=10
+        )
+    except requests.RequestException as e:
+        raise NetworkError(str(e)) from e
+    if r.status_code in (204, 404):
+        return   # deleted or didn't exist
+    if r.status_code == 403:
+        raise AuthError(
+            "auth_scope",
+            "Token lacks 'delete_repo' scope. Add it (gh: "
+            "`gh auth refresh -h github.com -s delete_repo`, or regenerate "
+            "your PAT with the 'delete_repo' box checked).",
+        )
+    raise NetworkError(f"repo delete failed ({r.status_code}): {r.text[:200]}")
+
+
+def create_repo(token: str, name: str) -> tuple[str, str]:
+    """Create a public repo. Returns (clone_url, html_url)."""
+    try:
+        r = requests.post(
+            f"{_API}/user/repos",
+            headers=_headers(token),
+            json={
+                "name": name,
+                "private": False,
+                "auto_init": False,
+                "description": "Managed by mom -- pixel text on my contribution graph.",
+            },
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        raise NetworkError(str(e)) from e
+    if r.status_code not in (201, 422):
+        raise NetworkError(f"repo create failed ({r.status_code}): {r.text[:200]}")
+    data = r.json()
+    return data["clone_url"], data["html_url"]
+
+
+def get_repo(token: str, owner: str, name: str) -> tuple[str, str] | None:
+    """Return (clone_url, html_url) if the repo exists, else None."""
+    try:
+        r = requests.get(
+            f"{_API}/repos/{owner}/{name}", headers=_headers(token), timeout=10
+        )
+    except requests.RequestException as e:
+        raise NetworkError(str(e)) from e
+    if r.status_code == 200:
+        data = r.json()
+        return data["clone_url"], data["html_url"]
+    if r.status_code == 404:
+        return None
+    raise NetworkError(f"GitHub API {r.status_code}: {r.text[:200]}")
+
+
 def ensure_repo(token: str, owner: str, name: str) -> tuple[str, str]:
     """Return (clone_url, html_url). Create the repo if it doesn't exist."""
     try:
