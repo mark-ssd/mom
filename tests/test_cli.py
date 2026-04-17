@@ -53,3 +53,33 @@ def test_draw_dry_run_unsupported_char_exits_2(tmp_xdg, monkeypatch):
     assert result.exit_code == 2
     data = json.loads(result.output)
     assert data["error"]["kind"] == "unsupported_char"
+
+
+def test_preview_is_alias_for_dry_run(tmp_xdg, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "fake")
+    r1 = runner.invoke(app, ["preview", "HI", "--year", "2024", "--format", "json"])
+    r2 = runner.invoke(app, ["draw", "HI", "--year", "2024", "--dry-run", "--format", "json"])
+    assert r1.exit_code == 0
+    d1, d2 = json.loads(r1.output), json.loads(r2.output)
+    assert d1["fit"] == d2["fit"]
+    assert d1["preview_ascii"] == d2["preview_ascii"]
+
+
+def test_config_set_token_persists(tmp_xdg):
+    result = runner.invoke(app, ["config", "set-token", "ghp_new"])
+    assert result.exit_code == 0
+    result2 = runner.invoke(app, ["config", "show"])
+    assert "ghp_new" not in result2.output   # redacted
+    assert "(set)" in result2.output or "***" in result2.output
+
+
+def test_config_check_auth_missing(tmp_xdg, monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    # Mock gh CLI to fail.
+    def fake_run(cmd, *a, **kw):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not logged in")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = runner.invoke(app, ["config", "check", "--format", "json"])
+    assert result.exit_code == 4
+    data = json.loads(result.output)
+    assert data["error"]["kind"] == "auth_missing"
