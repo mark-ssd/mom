@@ -36,7 +36,11 @@ ask for confirmation before committing anything.
 
 ```bash
 pipx install git+https://github.com/mark-ssd/mom
-mom config set-token ghp_your_personal_access_token
+
+# Recommended: authenticate via GitHub CLI
+gh auth login -s repo -s delete_repo
+
+# Then draw
 mom draw "HELLO WORLD" --year 2024
 ```
 
@@ -44,9 +48,24 @@ mom draw "HELLO WORLD" --year 2024
 
 - Python 3.10+
 - git
-- A GitHub Personal Access Token with `repo` scope
-- `git config --global user.email` must be one of your verified GitHub emails
-  (otherwise commits don't count toward your contribution graph)
+- **GitHub authentication** — either:
+  - **GitHub CLI (recommended):** `gh auth login -s repo -s delete_repo`. mom
+    reads your session via `gh auth token` with no config of its own.
+  - **Personal Access Token (fallback):** create at
+    https://github.com/settings/tokens/new?scopes=repo,delete_repo then
+    `mom config set-token <PAT>` (or export `GITHUB_TOKEN=<PAT>`).
+- Commits use `<user-id>+<login>@users.noreply.github.com` automatically, so
+  they always count toward your contribution graph regardless of your local
+  `git config user.email`.
+
+## Auth precedence
+
+mom resolves a token in this order (first hit wins):
+
+1. `--token` flag
+2. `gh auth token` (GitHub CLI session)
+3. `GITHUB_TOKEN` env var
+4. `~/.config/mom/config.json` (set via `mom config set-token`)
 
 ## Commands
 

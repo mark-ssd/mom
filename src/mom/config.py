@@ -41,18 +41,17 @@ def save(cfg: Config) -> None:
 
 
 def resolve_token(explicit: str | None) -> str:
-    """Resolve a GitHub token in this precedence:
-    explicit flag -> GITHUB_TOKEN env -> config file -> gh CLI.
-    Raises AuthError(kind="auth_missing") if none available.
+    """Resolve a GitHub token. Precedence (highest first):
+
+    1. --token flag (explicit override for any call site)
+    2. gh CLI session (primary; `gh auth token`)
+    3. GITHUB_TOKEN env var (useful in CI / scripted environments)
+    4. Config file PAT (mom config set-token ...)
+
+    Raises AuthError(kind="auth_missing") if nothing is available.
     """
     if explicit:
         return explicit
-    env_tok = os.environ.get("GITHUB_TOKEN")
-    if env_tok:
-        return env_tok
-    cfg = load()
-    if cfg.token:
-        return cfg.token
     try:
         res = subprocess.run(
             ["gh", "auth", "token"], capture_output=True, text=True, check=False
@@ -61,10 +60,17 @@ def resolve_token(explicit: str | None) -> str:
             return res.stdout.strip()
     except FileNotFoundError:
         pass
+    env_tok = os.environ.get("GITHUB_TOKEN")
+    if env_tok:
+        return env_tok
+    cfg = load()
+    if cfg.token:
+        return cfg.token
     raise AuthError(
         kind="auth_missing",
         message=(
-            "No GitHub token found. Set GITHUB_TOKEN, pass --token, or run "
-            "'mom config set-token'."
+            "No GitHub authentication found. Recommended: `gh auth login "
+            "-s repo -s delete_repo`. Alternatives: set GITHUB_TOKEN, "
+            "pass --token, or run `mom config set-token <PAT>`."
         ),
     )

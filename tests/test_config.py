@@ -36,37 +36,50 @@ def test_load_missing_file_returns_default(tmp_xdg):
     assert cfg.token is None
 
 
+def _mock_gh(monkeypatch, token: str | None):
+    """Helper: make `gh auth token` return `token` (or simulate missing gh if None)."""
+    def fake_run(cmd, *a, **kw):
+        if list(cmd[:3]) == ["gh", "auth", "token"]:
+            if token is None:
+                raise FileNotFoundError
+            return subprocess.CompletedProcess(cmd, 0, stdout=f"{token}\n", stderr="")
+        raise FileNotFoundError
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+
 def test_resolve_token_explicit_beats_all(tmp_xdg, monkeypatch):
+    _mock_gh(monkeypatch, "gh_token")
     monkeypatch.setenv("GITHUB_TOKEN", "env_token")
     save(Config(repo="x", github_user="y", token="config_token"))
     assert resolve_token(explicit="flag_token") == "flag_token"
 
 
-def test_resolve_token_env_beats_config(tmp_xdg, monkeypatch):
+def test_resolve_token_gh_beats_env_and_config(tmp_xdg, monkeypatch):
+    _mock_gh(monkeypatch, "gh_token")
+    monkeypatch.setenv("GITHUB_TOKEN", "env_token")
+    save(Config(repo="x", github_user="y", token="config_token"))
+    assert resolve_token(explicit=None) == "gh_token"
+
+
+def test_resolve_token_env_when_gh_unavailable(tmp_xdg, monkeypatch):
+    _mock_gh(monkeypatch, None)   # gh not installed
     monkeypatch.setenv("GITHUB_TOKEN", "env_token")
     save(Config(repo="x", github_user="y", token="config_token"))
     assert resolve_token(explicit=None) == "env_token"
 
 
-def test_resolve_token_config_when_no_env(tmp_xdg):
+def test_resolve_token_config_when_no_gh_no_env(tmp_xdg, monkeypatch):
+    _mock_gh(monkeypatch, None)
     save(Config(repo="x", github_user="y", token="config_token"))
     assert resolve_token(explicit=None) == "config_token"
 
 
-def test_resolve_token_falls_back_to_gh_cli(tmp_xdg, monkeypatch):
-    # Mock subprocess to simulate `gh auth token`.
-    def fake_run(cmd, *a, **kw):
-        if list(cmd[:3]) == ["gh", "auth", "token"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="gh_token\n", stderr="")
-        raise FileNotFoundError
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    assert resolve_token(explicit=None) == "gh_token"
-
-
 def test_resolve_token_raises_when_nothing_works(tmp_xdg, monkeypatch):
     def fake_run(cmd, *a, **kw):
+        # gh installed but not logged in
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not logged in")
     monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(AuthError) as excinfo:
         resolve_token(explicit=None)
     assert excinfo.value.kind == "auth_missing"
+    assert "gh auth login" in str(excinfo.value)

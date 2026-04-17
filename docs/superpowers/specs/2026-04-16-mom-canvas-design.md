@@ -1,7 +1,7 @@
 # mom-canvas — Design Spec
 
 **Date:** 2026-04-16
-**Status:** Implemented, amended 2026-04-16 (see §14)
+**Status:** Implemented, amended 2026-04-16 (see §14, §15)
 **Owner:** mark-ssd (aveyurov@gmail.com)
 **Repo:** `github.com/mark-ssd/mom`
 
@@ -414,3 +414,21 @@ Original spec targeted a specific calendar year when `--year` was omitted (defau
 **State format:** `.mom-state.json` keys drawings by `state_key` (was just year-as-string). Each entry stores `mode` (`"calendar"` | `"trailing"`), `ref` (year or ISO date), `text`, `intensity`, `updated_at`. On rebuild, each drawing's window is reconstructed deterministically from `mode` + `ref`.
 
 **CLI surface change:** `mom clean --year YYYY` became `mom clean <state-key>` (positional arg), since a state key now fully identifies a drawing. Auth and push paths are unchanged.
+
+## 15. Amendment — Auth precedence flip (2026-04-16)
+
+Original spec resolved auth as `--token → GITHUB_TOKEN env → config file → gh CLI`, making the PAT paths primary. In practice most users already have `gh` configured and don't want to manage a separate PAT for one tool. Also: `gh auth refresh -s delete_repo` is the least-friction way to grant the scopes mom needs for its delete-and-recreate push flow.
+
+**Change:** `resolve_token` now prefers `gh auth token` over env and config sources:
+1. `--token` flag (explicit override)
+2. `gh auth token` (**primary**)
+3. `GITHUB_TOKEN` env var
+4. `~/.config/mom/config.json` (PAT fallback)
+
+**SKILL.md change:** Step 3 ("Ensure auth is configured") now guides the user to `!gh auth login -s repo -s delete_repo` first, and only falls back to PAT on user preference or when `gh` is unavailable.
+
+**`auth_missing` error message** updated to reflect the new recommendation (gh first, PAT alternatives listed after).
+
+**README change:** install docs lead with `gh auth login`; PAT path moved to "fallback" section.
+
+The two PAT paths (env var, config file) are retained unchanged — still valuable for CI, headless use, and scripting.

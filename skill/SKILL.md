@@ -36,21 +36,37 @@ Run: `mom config check --format json`
 
 Parse the JSON:
 - `status == "ok"` → proceed to Step 4.
-- `error.kind == "auth_missing"`:
-    1. Ask user: "I need a GitHub Personal Access Token with `repo` and
-       `delete_repo` scopes. Create one at
-       https://github.com/settings/tokens/new?scopes=repo,delete_repo&description=mom-canvas
-       and paste it here. It'll be saved to ~/.config/mom/config.json
-       (chmod 600; never sent anywhere else)."
-    2. Once user pastes, run: `mom config set-token <TOKEN>` (pass token as argv, not interpolated into a shell string).
-    3. Re-run `mom config check --format json`. Proceed if ok; otherwise surface error.
-- `error.kind == "auth_invalid"` or `"auth_scope"`: surface the error
-    message verbatim, tell the user to regenerate the PAT with both
-    `repo` and `delete_repo` scopes, and STOP.
+- `error.kind == "auth_missing"` — mom supports two auth paths, in this order
+  of preference:
 
-**Why `delete_repo` scope?** On re-runs, mom deletes and recreates the
-dedicated repo to avoid leaving orphan commits that GitHub keeps counting
-for up to 90 days. Without `delete_repo` scope, mom falls back to
+    **A. GitHub CLI (recommended).** Ask the user:
+    > "I'll authenticate via the GitHub CLI. Run this in your prompt:
+    > `!gh auth login -s repo -s delete_repo`
+    > (skip if already logged in; otherwise follow the interactive prompts).
+    > When done, reply 'ready'."
+
+    After the user replies, re-run `mom config check --format json`. If still
+    missing, the user likely doesn't have `gh` installed — offer option B.
+
+    **B. Personal Access Token (fallback).** Only if the user asks for it or
+    `gh` isn't available:
+    > "Create a PAT at
+    > https://github.com/settings/tokens/new?scopes=repo,delete_repo&description=mom-canvas
+    > and paste it here. I'll save it to ~/.config/mom/config.json
+    > (chmod 600)."
+
+    Once pasted, run `mom config set-token <TOKEN>` (token as argv, never
+    interpolated into a shell string). Re-check auth.
+
+- `error.kind == "auth_invalid"` or `"auth_scope"`: surface the error verbatim.
+  - If they authed via gh, suggest:
+    `!gh auth refresh -h github.com -s repo -s delete_repo`
+  - If via PAT, have them regenerate with both scopes.
+  Then STOP.
+
+**Why both `repo` and `delete_repo` scopes?** On re-runs, mom deletes and
+recreates the dedicated repo to avoid leaving orphan commits that GitHub
+keeps counting for up to 90 days. Without `delete_repo`, mom falls back to
 force-push and warns about the inflation risk.
 
 ## Step 4 — Preview + fit check
@@ -74,9 +90,9 @@ Parse JSON:
     The contribution graph updates within a few minutes."
 - `status == "error"` with `error.kind == "auth_scope"` that mentions
     `delete_repo`: tell the user:
-    "Your token is missing the `delete_repo` scope. Run in your prompt:
+    "Missing the `delete_repo` scope. If you authed via gh, run:
     `!gh auth refresh -h github.com -s delete_repo`
-    (or regenerate your PAT with `delete_repo` checked). Then re-run
+    If via PAT, regenerate it with `delete_repo` checked. Then re-run
     /mom-canvas."
     STOP.
 - Other `status == "error"`: surface `error.message` + `error.code`. STOP.
