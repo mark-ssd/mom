@@ -15,8 +15,8 @@ def _headers(token: str) -> dict[str, str]:
     }
 
 
-def verify_token(token: str) -> str:
-    """Verify the token and return the login. Checks `repo` scope.
+def verify_token(token: str) -> dict:
+    """Verify the token and return {"login": str, "id": int}. Checks `repo` scope.
     Raises AuthError(kind="auth_invalid"|"auth_scope") or NetworkError.
     """
     try:
@@ -40,7 +40,17 @@ def verify_token(token: str) -> str:
             "auth_scope",
             "Token lacks 'repo' scope. Re-issue with that scope checked.",
         )
-    return r.json()["login"]
+    data = r.json()
+    return {"login": data["login"], "id": data["id"]}
+
+
+def noreply_email(user_id: int, login: str) -> str:
+    """GitHub's always-recognized-as-yours email.
+
+    Commits authored with this address count toward the contribution graph
+    without needing the `user:email` scope or any specific verified email.
+    """
+    return f"{user_id}+{login}@users.noreply.github.com"
 
 
 def verify_email(token: str, git_email: str) -> str | None:

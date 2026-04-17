@@ -83,6 +83,8 @@ def test_rebuild_creates_expected_commits(tmp_path, bare_origin, author_env):
         action="upsert",
         state_key=canvas.window.state_key,
         today=today,
+        author_name="Test User",
+        author_email="12345+test@users.noreply.github.com",
     )
     # A has 10 on-pixels (1+2+3+2+2) x 5 commits + 1 initial "rebuild" commit = 51.
     log = subprocess.run(
@@ -105,6 +107,8 @@ def test_rebuild_trailing_window_creates_cross_year_commits(tmp_path, bare_origi
         action="upsert",
         state_key=canvas.window.state_key,
         today=today,
+        author_name="Test User",
+        author_email="12345+test@users.noreply.github.com",
     )
     # Verify state file contains mode=trailing and ref=today
     import json
@@ -139,4 +143,6 @@ def test_rebuild_refuses_repo_missing_state(tmp_path, bare_origin, author_env):
             action="upsert",
             state_key=canvas.window.state_key,
             today=today,
+            author_name="Test User",
+            author_email="12345+test@users.noreply.github.com",
         )

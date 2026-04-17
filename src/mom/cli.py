@@ -16,7 +16,7 @@ from mom.errors import (
 from mom.layout import Canvas, Fit, calendar_window, plan, trailing_window
 from mom.preview import render
 from mom.config import load, save, resolve_token
-from mom.gh import verify_token, verify_email, ensure_repo
+from mom.gh import verify_token, ensure_repo, noreply_email
 from mom.git_ops import rebuild
 
 app = typer.Typer(
@@ -133,25 +133,23 @@ def draw(
 
     try:
         tok = resolve_token(token)
-        user = verify_token(tok)
+        user_info = verify_token(tok)
+        login = user_info["login"]
+        author_email = noreply_email(user_info["id"], login)
         if not cfg.github_user:
-            cfg.github_user = user
+            cfg.github_user = login
             save(cfg)
-        git_email = _git_user_email()
-        email_warning = verify_email(tok, git_email) if git_email else None
-        clone_url, html_url = ensure_repo(tok, user, cfg.repo)
+        clone_url, html_url = ensure_repo(tok, login, cfg.repo)
         auth_clone = clone_url.replace("https://", f"https://x-access-token:{tok}@")
     except AuthError as e:
         _emit_error(fmt, 4, e.kind, str(e))
     except NetworkError as e:
         _emit_error(fmt, 5, "network", str(e))
 
-    if email_warning and fmt is Format.text:
-        typer.echo(f"warning: {email_warning}", err=True)
-
     if not yes and fmt is Format.text:
         typer.echo(preview_ascii)
         typer.echo(f"\n{total_commits} commits across {len(dates)} dates.")
+        typer.echo(f"Commits authored as: {login} <{author_email}>")
         if not typer.confirm("Proceed?"):
             raise typer.Exit(0)
 
@@ -164,6 +162,8 @@ def draw(
             action="upsert",
             state_key=canvas.window.state_key,
             today=today,
+            author_name=login,
+            author_email=author_email,
         )
     except NotOurRepoError as e:
         _emit_error(fmt, 1, "not_our_repo", str(e))
@@ -231,8 +231,10 @@ def clean(
         cfg.repo = repo
     try:
         tok = resolve_token(token)
-        user = verify_token(tok)
-        clone_url, html_url = ensure_repo(tok, user, cfg.repo)
+        user_info = verify_token(tok)
+        login = user_info["login"]
+        author_email = noreply_email(user_info["id"], login)
+        clone_url, html_url = ensure_repo(tok, login, cfg.repo)
         auth_clone = clone_url.replace("https://", f"https://x-access-token:{tok}@")
     except AuthError as e:
         _emit_error(fmt, 4, e.kind, str(e))
@@ -249,6 +251,7 @@ def clean(
         rebuild(
             work_dir=work_dir, remote_url=auth_clone,
             canvas=None, action="delete", state_key=key, today=today,
+            author_name=login, author_email=author_email,
         )
     except NotOurRepoError as e:
         _emit_error(fmt, 1, "not_our_repo", str(e))
@@ -269,15 +272,15 @@ def config_check(
     """Exit 0 if auth is resolvable and the configured repo is reachable."""
     try:
         tok = resolve_token(token)
-        user = verify_token(tok)
+        user_info = verify_token(tok)
     except AuthError as e:
         _emit_error(fmt, 4, e.kind, str(e))
     except NetworkError as e:
         _emit_error(fmt, 5, "network", str(e))
     if fmt is Format.json:
-        typer.echo(_json.dumps({"status": "ok", "github_user": user, "error": None}))
+        typer.echo(_json.dumps({"status": "ok", "github_user": user_info["login"], "error": None}))
     else:
-        typer.echo(f"OK -- authenticated as {user}")
+        typer.echo(f"OK -- authenticated as {user_info['login']}")
 
 
 @config_app.command("set-token")

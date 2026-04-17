@@ -1,6 +1,6 @@
 import pytest
 import responses
-from mom.gh import verify_token, verify_email, ensure_repo
+from mom.gh import verify_token, verify_email, ensure_repo, noreply_email
 from mom.errors import AuthError, NetworkError
 
 
@@ -11,11 +11,16 @@ API = "https://api.github.com"
 def test_verify_token_ok():
     responses.add(
         responses.GET, f"{API}/user",
-        json={"login": "mark-ssd"}, status=200,
+        json={"login": "mark-ssd", "id": 12345}, status=200,
         headers={"X-OAuth-Scopes": "repo, read:user"},
     )
-    user = verify_token("ghp_xyz")
-    assert user == "mark-ssd"
+    info = verify_token("ghp_xyz")
+    assert info["login"] == "mark-ssd"
+    assert info["id"] == 12345
+
+
+def test_noreply_email_format():
+    assert noreply_email(12345, "mark-ssd") == "12345+mark-ssd@users.noreply.github.com"
 
 
 @responses.activate
@@ -30,7 +35,7 @@ def test_verify_token_401_raises_auth_invalid():
 def test_verify_token_missing_repo_scope_raises():
     responses.add(
         responses.GET, f"{API}/user",
-        json={"login": "x"}, status=200,
+        json={"login": "x", "id": 1}, status=200,
         headers={"X-OAuth-Scopes": "read:user"},
     )
     with pytest.raises(AuthError) as excinfo:

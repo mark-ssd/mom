@@ -79,6 +79,8 @@ def rebuild(
     action: Literal["upsert", "delete"],
     state_key: str,
     today: date,
+    author_name: str,
+    author_email: str,
 ) -> None:
     """Rebuild the repo's main branch deterministically from state, then force-push.
 
@@ -128,14 +130,19 @@ def rebuild(
     write_state(work_dir, state)
     _git(work_dir, "add", ".")
 
-    # Initial commit, dated 1 day before earliest drawing (or today if no drawings).
-    seed_date = (all_cells[0][0] if all_cells else today)
-    seed_env = _date_env(seed_date)
-    _git(work_dir, "commit", "-m", "rebuild", env=_merged_env(seed_env))
+    author_env = {
+        "GIT_AUTHOR_NAME": author_name,
+        "GIT_AUTHOR_EMAIL": author_email,
+        "GIT_COMMITTER_NAME": author_name,
+        "GIT_COMMITTER_EMAIL": author_email,
+    }
 
-    # Per-cell empty commits, chronological.
+    seed_date = (all_cells[0][0] if all_cells else today)
+    _git(work_dir, "commit", "-m", "rebuild",
+         env=_merged_env({**_date_env(seed_date), **author_env}))
+
     for d, count in all_cells:
-        env = _merged_env(_date_env(d))
+        env = _merged_env({**_date_env(d), **author_env})
         for n in range(count):
             _git(work_dir, "commit", "--allow-empty",
                  "-m", f"canvas {d.isoformat()} #{n + 1}", env=env)
