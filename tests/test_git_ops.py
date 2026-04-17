@@ -86,12 +86,12 @@ def test_rebuild_creates_expected_commits(tmp_path, bare_origin, author_env):
         author_name="Test User",
         author_email="12345+test@users.noreply.github.com",
     )
-    # A has 10 on-pixels (1+2+3+2+2) x 5 commits + 1 initial "rebuild" commit = 51.
+    # A has 14 on-pixels (3+2+5+2+2) x 5 commits + 1 initial "rebuild" commit = 71.
     log = subprocess.run(
         ["git", "-C", str(work), "log", "--format=%H", "main"],
         check=True, capture_output=True, text=True,
     ).stdout.splitlines()
-    assert len(log) == 10 * 5 + 1
+    assert len(log) == 14 * 5 + 1
 
 
 def test_rebuild_trailing_window_creates_cross_year_commits(tmp_path, bare_origin, author_env):

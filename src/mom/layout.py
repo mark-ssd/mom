@@ -132,10 +132,15 @@ def trailing_window(ref_date: date) -> Window:
     )
 
 
+_GLYPH_WIDTH = 5
+_GLYPH_SPACING = 1
+
+
 def required_cols(text: str) -> int:
+    """Pixel-columns needed to render text in the 5x5 font with 1-col spacing."""
     if not text:
         raise ValueError("text must be non-empty")
-    return 4 * len(text) - 1
+    return _GLYPH_WIDTH * len(text) + _GLYPH_SPACING * (len(text) - 1)
 
 
 def check_fit(required: int, available: int, window: Window) -> Fit:
@@ -171,13 +176,13 @@ def plan(text: str, window: Window, intensity: int) -> "Canvas | Fit":
     for glyph in glyphs:
         for glyph_row, row_str in enumerate(glyph):
             grid_row = glyph_row + 1   # rows 1..5 (Mon..Fri)
-            for glyph_col in range(3):
+            for glyph_col in range(_GLYPH_WIDTH):
                 if row_str[glyph_col] == "#":
                     cell_date = window.grid_start + timedelta(
                         weeks=col_cursor + glyph_col, days=grid_row
                     )
                     cells.append((cell_date, commits_per_cell))
-        col_cursor += 4
+        col_cursor += _GLYPH_WIDTH + _GLYPH_SPACING
 
     return Canvas(cells=cells, window=window, intensity=intensity, text=text)
 

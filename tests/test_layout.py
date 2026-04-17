@@ -97,11 +97,11 @@ def test_trailing_window_on_saturday_includes_that_week():
 # ---- required_cols, check_fit ----
 
 def test_required_cols_one_char():
-    assert required_cols("A") == 3
+    assert required_cols("A") == 5
 
 
 def test_required_cols_two_chars():
-    assert required_cols("HI") == 7
+    assert required_cols("HI") == 11
 
 
 def test_required_cols_empty_raises():
@@ -110,7 +110,7 @@ def test_required_cols_empty_raises():
 
 
 def test_required_cols_hello_world():
-    assert required_cols("HELLO WORLD") == 43
+    assert required_cols("HELLO WORLD") == 65   # 11*5 + 10 spacers = 65
 
 
 def test_check_fit_exact_fit():
@@ -149,11 +149,11 @@ def test_plan_trailing_returns_canvas_and_fits_ssd_tech():
 
 
 def test_plan_cell_count_matches_glyph_pixels():
-    # "HI": H=11 (2+2+3+2+2), I=9 (3+1+1+1+3) = 20 cells.
+    # 5x5: H=13 (2+2+5+2+2), I=13 (5+1+1+1+5) -> 26 cells.
     today = date(2026, 4, 16)
     w = calendar_window(2024, today)
     c = plan("HI", w, intensity=4)
-    assert len(c.cells) == 20
+    assert len(c.cells) == 26
 
 
 def test_plan_commit_count_scales_with_intensity():
@@ -167,25 +167,25 @@ def test_plan_commit_count_scales_with_intensity():
 
 
 def test_plan_centers_horizontally():
-    # "A" in 2024. display_cols=53 (53 weeks span 2024). pad=(53-3)//2=25.
+    # 5x5 font: "A" is 5 cols, display_cols=53. pad=(53-5)//2=24.
     today = date(2026, 4, 16)
     w = calendar_window(2024, today)
     c = plan("A", w, intensity=4)
     min_col = min((d - c.window.grid_start).days // 7 for d, _ in c.cells)
     max_col = max((d - c.window.grid_start).days // 7 for d, _ in c.cells)
-    assert min_col == 25
-    assert max_col == 27
+    assert min_col == 24
+    assert max_col == 28
 
 
 def test_plan_trailing_centers_on_53_col_display():
-    # Trailing display_cols=53. "SSD TECH" = 31 cols. pad=(53-31)//2=11.
+    # 5x5 font: "SSD TECH" = 8 chars * 5 + 7 spacers = 47 cols. pad=(53-47)//2=3.
     today = date(2026, 4, 16)
     w = trailing_window(today)
     c = plan("SSD TECH", w, intensity=4)
     min_col = min((d - c.window.grid_start).days // 7 for d, _ in c.cells)
     max_col = max((d - c.window.grid_start).days // 7 for d, _ in c.cells)
-    assert min_col == 11
-    assert max_col == 41
+    assert min_col == 3
+    assert max_col == 49
 
 
 def test_calendar_window_display_cols_past_year():

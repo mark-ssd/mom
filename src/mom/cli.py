@@ -13,7 +13,7 @@ from mom.errors import (
     AuthError, FitError, NetworkError,
     NotOurRepoError, UnsupportedCharError,
 )
-from mom.layout import Canvas, Fit, calendar_window, plan, trailing_window
+from mom.layout import Canvas, Fit, calendar_window, plan, required_cols, trailing_window
 from mom.preview import render
 from mom.config import load, save, resolve_token
 from mom.gh import (
@@ -119,7 +119,7 @@ def draw(
 
     payload = {
         "status": "preview" if dry_run else "success",
-        "fit": {"ok": True, "required_cols": 4 * len(text) - 1,
+        "fit": {"ok": True, "required_cols": required_cols(text),
                 "available_cols": len(canvas.window.usable_indices),
                 "window": canvas.window.state_key},
         "commits": {"total": total_commits, "date_range": date_range},
@@ -253,7 +253,7 @@ def preview(
     dates = sorted({d for d, _ in result.cells})
     payload = {
         "status": "preview",
-        "fit": {"ok": True, "required_cols": 4 * len(text) - 1,
+        "fit": {"ok": True, "required_cols": required_cols(text),
                 "available_cols": len(result.window.usable_indices),
                 "window": result.window.state_key},
         "commits": {"total": total,

@@ -27,8 +27,8 @@ def test_draw_dry_run_json_fit(tmp_xdg, monkeypatch):
     data = json.loads(result.output)
     assert data["status"] == "preview"
     assert data["fit"]["ok"] is True
-    assert data["fit"]["required_cols"] == 7
-    assert data["commits"]["total"] == 11 * 20 + 9 * 20   # H(11)+I(9) pixels * 20 = 400
+    assert data["fit"]["required_cols"] == 11   # 5x5 font: 2*5 + 1 spacer = 11
+    assert data["commits"]["total"] == 13 * 20 + 13 * 20   # H(13)+I(13) * 20 = 520
     assert "preview_ascii" in data
 
 
