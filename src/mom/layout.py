@@ -19,8 +19,10 @@ class Window:
     """A slice of the contribution grid where drawing is allowed.
 
     - grid_start: Sunday anchor of column 0 within this window
-    - usable_indices: column indices (relative to grid_start) where Mon-Fri
-      are all within-scope and the week's Saturday has passed
+    - usable_indices: column indices where Mon-Fri are in-scope and the
+      week's Saturday has passed (drawable cells)
+    - display_cols: total columns GitHub renders for this view (includes
+      partial weeks at both ends). Used for visual centering.
     - state_key: unique identifier stored in .mom-state.json
     - human_desc: human-readable label used in error messages
     - mode: "calendar" or "trailing"
@@ -28,6 +30,7 @@ class Window:
     """
     grid_start: date
     usable_indices: tuple[int, ...]
+    display_cols: int
     state_key: str
     human_desc: str
     mode: str
@@ -69,12 +72,33 @@ def usable_weeks(year: int, today: date) -> list[int]:
     return result
 
 
+def _display_cols_calendar(year: int, today: date, grid_start: date) -> int:
+    """Count weeks GitHub renders for the given calendar year as of today.
+    Includes partial weeks at year boundaries; for the current year, stops at
+    the current week (inclusive).
+    """
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    count = 0
+    for wk in range(54):
+        sun = grid_start + timedelta(weeks=wk)
+        sat = sun + timedelta(days=6)
+        if sun > year_end or sat < year_start:
+            continue
+        if year == today.year and sun > today:
+            break
+        count = wk + 1
+    return count
+
+
 def calendar_window(year: int, today: date) -> Window:
     grid_start = _sunday_on_or_before(date(year, 1, 1))
     indices = tuple(usable_weeks(year, today))
+    display_cols = _display_cols_calendar(year, today, grid_start)
     return Window(
         grid_start=grid_start,
         usable_indices=indices,
+        display_cols=display_cols,
         state_key=f"calendar-{year}",
         human_desc=f"year {year}",
         mode="calendar",
@@ -95,6 +119,8 @@ def trailing_window(ref_date: date) -> Window:
     return Window(
         grid_start=grid_start,
         usable_indices=tuple(range(52)),
+        # GitHub's default view shows 53 cols: 52 complete weeks + current week.
+        display_cols=53,
         state_key=f"trailing-{ref_date.isoformat()}",
         human_desc=f"trailing window ending {ref_date.isoformat()}",
         mode="trailing",
@@ -127,8 +153,12 @@ def plan(text: str, window: Window, intensity: int) -> "Canvas | Fit":
 
     glyphs = [get_glyph(ch) for ch in text]
 
-    pad = (len(window.usable_indices) - req) // 2
-    start_col = window.usable_indices[pad]
+    # Center using GitHub's display width, then clamp so the drawing stays in usable cols.
+    pad = (window.display_cols - req) // 2
+    start_col = max(pad, window.usable_indices[0])
+    # If that would overrun the last usable col, right-align within usable range.
+    if start_col + req - 1 > window.usable_indices[-1]:
+        start_col = window.usable_indices[-1] - req + 1
 
     cells: list[tuple[date, int]] = []
     commits_per_cell = _INTENSITY_COMMITS[intensity]

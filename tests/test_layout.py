@@ -162,14 +162,36 @@ def test_plan_commit_count_scales_with_intensity():
 
 
 def test_plan_centers_horizontally():
-    # "A" in 2024 (52 cols). required=3. pad=24. start_col=usable[24]=24.
+    # "A" in 2024. display_cols=53 (53 weeks span 2024). pad=(53-3)//2=25.
     today = date(2026, 4, 16)
     w = calendar_window(2024, today)
     c = plan("A", w, intensity=4)
     min_col = min((d - c.window.grid_start).days // 7 for d, _ in c.cells)
     max_col = max((d - c.window.grid_start).days // 7 for d, _ in c.cells)
-    assert min_col == 24
-    assert max_col == 26
+    assert min_col == 25
+    assert max_col == 27
+
+
+def test_plan_trailing_centers_on_53_col_display():
+    # Trailing display_cols=53. "SSD TECH" = 31 cols. pad=(53-31)//2=11.
+    today = date(2026, 4, 16)
+    w = trailing_window(today)
+    c = plan("SSD TECH", w, intensity=4)
+    min_col = min((d - c.window.grid_start).days // 7 for d, _ in c.cells)
+    max_col = max((d - c.window.grid_start).days // 7 for d, _ in c.cells)
+    assert min_col == 11
+    assert max_col == 41
+
+
+def test_calendar_window_display_cols_past_year():
+    today = date(2026, 4, 16)
+    w = calendar_window(2024, today)
+    assert w.display_cols == 53   # 2024 spans 53 weeks in GitHub's view
+
+
+def test_trailing_window_display_cols_is_53():
+    w = trailing_window(date(2026, 4, 16))
+    assert w.display_cols == 53
 
 
 def test_plan_rejects_too_wide_returns_fit_fail():
