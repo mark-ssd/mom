@@ -34,6 +34,8 @@ def render(canvas: Canvas) -> str:
     lines: list[str] = []
     lines.append("        " + "".join(header_cells))
     for row, label in enumerate(_DAY_LABELS):
-        row_chars = ["\u2588" if grid[row][c] else "\u00b7" for c in range(total_cols)]
+        # Use ASCII `#` / `.` -- guaranteed same width in any monospace font.
+        # The Unicode block + middle-dot pair can drift in some terminal fonts.
+        row_chars = ["#" if grid[row][c] else "." for c in range(total_cols)]
         lines.append(f"{label}     " + "".join(row_chars))
     return "\n".join(lines)

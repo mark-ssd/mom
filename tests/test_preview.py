@@ -13,18 +13,18 @@ def test_render_has_7_weekday_rows():
     assert len(day_rows) == 7
 
 
-def test_render_uses_block_for_on_pixels():
+def test_render_uses_hash_for_on_pixels():
     today = date(2026, 4, 16)
     c = plan("A", calendar_window(2024, today), intensity=4)
     out = render(c)
-    assert "\u2588" in out
+    assert "#" in out
 
 
 def test_render_uses_dot_for_off_pixels():
     today = date(2026, 4, 16)
     c = plan("A", calendar_window(2024, today), intensity=4)
     out = render(c)
-    assert "\u00b7" in out
+    assert "." in out
 
 
 def test_render_includes_month_header():
@@ -44,5 +44,5 @@ def test_render_sun_and_sat_rows_are_empty():
     lines = out.splitlines()
     sun_row = next(l for l in lines if l.startswith("Sun"))
     sat_row = next(l for l in lines if l.startswith("Sat"))
-    assert "\u2588" not in sun_row
-    assert "\u2588" not in sat_row
+    assert "#" not in sun_row
+    assert "#" not in sat_row
